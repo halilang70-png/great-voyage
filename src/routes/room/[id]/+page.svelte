@@ -63,10 +63,11 @@
 	}
 
 	function handleClipboardPayload(payload: ClipboardPayload) {
-		if (payload.senderId === bridge?.['streamId']) return;
 		if (history.some(h => h.timestamp === payload.timestamp && h.content === payload.content)) return;
 		history = [payload, ...history].slice(0, 50);
-		playReceive();
+		if (payload.senderId !== bridge?.['streamId']) {
+			playReceive();
+		}
 		if (settings.autoCopy && payload.type === 'text') {
 			navigator.clipboard.writeText(payload.content).catch(() => {});
 		}
