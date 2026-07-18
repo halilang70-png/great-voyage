@@ -135,6 +135,27 @@ export class ClipboardBridge {
 				peer.label = info?.label || peer.label;
 				this._onPeersChange?.(this.peers);
 			}
+			// Auto-view discovered peer to establish bidirectional data channel
+			if (streamID && streamID !== this.streamId) {
+				console.log(`[clipdrop] auto-viewing peer: ${streamID}`);
+				sdk.view(streamID).catch((err: unknown) => {
+					console.warn('[clipdrop] view failed:', err);
+				});
+			}
+		});
+
+		// Room listing — discover existing peers and view them
+		sdk.addEventListener('listing', (e: CustomEvent) => {
+			const list = e.detail?.list;
+			if (!Array.isArray(list)) return;
+			for (const peer of list) {
+				if (peer.streamID && peer.streamID !== this.streamId) {
+					console.log(`[clipdrop] viewing listed peer: ${peer.streamID}`);
+					sdk.view(peer.streamID).catch((err: unknown) => {
+						console.warn('[clipdrop] view listed peer failed:', err);
+					});
+				}
+			}
 		});
 
 		// Data channel is open — P2P is working!
