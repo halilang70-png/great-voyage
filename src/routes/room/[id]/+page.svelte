@@ -28,10 +28,10 @@
 	let roomUrl = $derived(typeof window !== 'undefined' ? window.location.href : '');
 
 	let statusText = $derived.by(() => {
-		if (mode === 'connecting') return 'connecting...';
+		if (mode === 'connecting') return 'waiting for peer…';
 		if (mode === 'fallback') return 'text sync (fallback)';
 		if (peers.length > 0) return `${peers.length} peer${peers.length > 1 ? 's' : ''} · P2P`;
-		return 'P2P ready — waiting for peer...';
+		return 'P2P ready';
 	});
 
 	let statusDot = $derived.by(() => {
@@ -106,7 +106,7 @@
 	}
 
 	async function sendImageFromPaste() {
-		if (mode === 'fallback') return;
+		if (mode !== 'p2p') return;
 		try {
 			const items = await navigator.clipboard.read();
 			for (const item of items) {
@@ -130,7 +130,7 @@
 	function handleFileDrop(e: DragEvent) {
 		e.preventDefault();
 		dragOver = false;
-		if (mode === 'fallback') return;
+		if (mode !== 'p2p') return;
 		const file = e.dataTransfer?.files[0];
 		if (!file || !file.type.startsWith('image/')) return;
 		const reader = new FileReader();

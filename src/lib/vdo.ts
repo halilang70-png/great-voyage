@@ -3,9 +3,10 @@
  *
  * Architecture:
  *   1. Try P2P via VDO.Ninja SDK (DataChannel)
- *   2. If P2P fails within timeout → fall back to HTTP pull via /api/sync
- *   3. Receiver manually triggers fetch instead of polling
- *   4. Fallback is text-only (images require P2P)
+ *   2. No auto-timeout — P2P can take as long as it needs
+ *   3. If user sends before P2P connects → fall back to HTTP pull via /api/sync
+ *   4. Receiver manually triggers fetch instead of polling
+ *   5. Fallback is text-only (images require P2P)
  */
 
 export interface PeerInfo {
@@ -24,7 +25,7 @@ export interface ClipboardPayload {
 
 export type ConnectionMode = 'p2p' | 'fallback' | 'connecting';
 
-const P2P_TIMEOUT_MS = 6000;
+// No auto-timeout — fallback is only triggered on user action (send)
 
 export class ClipboardBridge {
 	private sdk: VDONinjaSDK | null = null;
@@ -38,7 +39,6 @@ export class ClipboardBridge {
 	private _connected = false;
 	private _mode: ConnectionMode = 'connecting';
 	private _p2pReady = false;
-	private _p2pTimeout: ReturnType<typeof setTimeout> | null = null;
 	private _lastSyncTs = 0;
 
 	constructor(room: string) {
@@ -108,10 +108,11 @@ export class ClipboardBridge {
 
 		sdk.addEventListener('disconnected', () => {
 			this._connected = false;
+			this._p2pReady = false;
 			this._onConnectionChange?.(false);
-			// If we lose P2P, switch to fallback
+			// Go back to connecting — next send will trigger fallback if needed
 			if (this._mode === 'p2p') {
-				this.startFallback();
+				this.setMode('connecting');
 			}
 		});
 
@@ -139,7 +140,6 @@ export class ClipboardBridge {
 		// Data channel is open — P2P is working!
 		sdk.addEventListener('dataChannelOpen', () => {
 			this._p2pReady = true;
-			this.cancelP2pTimeout();
 			this.setMode('p2p');
 		});
 
@@ -155,21 +155,6 @@ export class ClipboardBridge {
 		await sdk.connect();
 		await sdk.joinRoom({ room: this.room, password: false });
 		await sdk.announce({ streamID: this.streamId, label: 'clipdrop' });
-
-		// Start P2P timeout — if DataChannel doesn't open in time, fall back
-		this._p2pTimeout = setTimeout(() => {
-			if (!this._p2pReady) {
-				console.log('[clipdrop] P2P timeout — switching to HTTP fallback');
-				this.startFallback();
-			}
-		}, P2P_TIMEOUT_MS);
-	}
-
-	private cancelP2pTimeout() {
-		if (this._p2pTimeout) {
-			clearTimeout(this._p2pTimeout);
-			this._p2pTimeout = null;
-		}
 	}
 
 	// ─── HTTP Fallback (on-demand pull) ─────────────────────────
@@ -218,6 +203,12 @@ export class ClipboardBridge {
 			senderId: this.streamId
 		};
 
+		if (this._mode === 'connecting') {
+			// User tried to send but P2P hasn't connected yet — fall back now
+			console.log('[clipdrop] P2P not ready at send time — switching to HTTP fallback');
+			this.startFallback();
+		}
+
 		if (this._mode === 'p2p' && this.sdk) {
 			// P2P send
 			this.sdk.sendData(payload);
@@ -253,7 +244,6 @@ export class ClipboardBridge {
 	}
 
 	destroy() {
-		this.cancelP2pTimeout();
 		if (this.sdk) {
 			this.sdk.leaveRoom();
 			this.sdk.disconnect();
