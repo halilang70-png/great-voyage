@@ -1,0 +1,9 @@
+name = "clipdrop"
+compatibility_date = "2024-12-01"
+
+# KV namespace for text fallback sync
+# Create it with: npx wrangler kv namespace create SYNC
+# Then paste the id below
+[[kv_namespaces]]
+binding = "SYNC"
+id = "YOUR_KV_NAMESPACE_ID"
