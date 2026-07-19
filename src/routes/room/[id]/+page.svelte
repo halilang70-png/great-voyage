@@ -242,9 +242,29 @@
 	function regWhiteboardIncoming(handler: (msg: WhiteboardMsg) => void) {
 		whiteboardIncoming = handler;
 	}
+	// Whiteboard send: dedupe toasts + throttle stroke-move so a single
+	// brush stroke doesn't generate hundreds of P2P messages (and hundreds
+	// of failure toasts when P2P isn't ready).
+	let lastWbWarn = 0;
+	let lastMoveSent = 0;
 	function sendWhiteboard(msg: WhiteboardMsg) {
+		// Throttle pointer-move to ~60fps max (16ms). Higher rate is invisible
+		// to the peer anyway and just floods the DataChannel.
+		if (msg.kind === 'stroke-move') {
+			const now = msg.ts;
+			if (now - lastMoveSent < 16) return;
+			lastMoveSent = now;
+		}
 		const ok = bridge?.sendWhiteboard(msg);
-		if (!ok) pushToast('P2P 未就绪，白板未发送', 'warn', 2000);
+		if (!ok) {
+			// Dedupe: at most one toast per 2s, otherwise drawing a single line
+			// while P2P is down spams the screen with hundreds of toasts.
+			const now = Date.now();
+			if (now - lastWbWarn > 2000) {
+				lastWbWarn = now;
+				pushToast('P2P 未就绪，白板未发送', 'warn', 2000);
+			}
+		}
 	}
 
 	function goBack() {
