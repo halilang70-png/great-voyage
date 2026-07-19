@@ -5,6 +5,9 @@
 
 {@render children()}
 
+<!-- CRT scan-line overlay -->
+<div class="crt-overlay"></div>
+
 <style>
 	:global(*) {
 		margin: 0;
@@ -13,45 +16,53 @@
 	}
 
 	:global(:root) {
-		--bg: #0a0a0f;
-		--bg-card: #12121a;
-		--bg-hover: #1a1a26;
-		--border: #2a2a3a;
-		--border-focus: #6366f1;
-		--text: #e8e8ed;
-		--text-dim: #7a7a8e;
-		--text-muted: #4a4a5e;
-		--accent: #6366f1;
-		--accent-glow: rgba(99, 102, 241, 0.3);
-		--accent-hover: #818cf8;
-		--success: #22c55e;
-		--success-glow: rgba(34, 197, 94, 0.25);
-		--danger: #ef4444;
-		--gradient-1: linear-gradient(135deg, #6366f1 0%, #8b5cf6 50%, #a855f7 100%);
-		--gradient-2: linear-gradient(135deg, #0f172a 0%, #1e1b4b 100%);
-		--radius: 12px;
-		--radius-sm: 8px;
-		--radius-lg: 16px;
-		--font: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
-		--font-mono: 'JetBrains Mono', 'Fira Code', 'Cascadia Code', monospace;
+		--bg: #0a0a0a;
+		--bg-card: #111111;
+		--bg-hover: #1a1a1a;
+		--border: #33ff33;
+		--border-focus: #66ff66;
+		--text: #33ff33;
+		--text-dim: #1a8a1a;
+		--text-muted: #0d5a0d;
+		--accent: #33ff33;
+		--accent-glow: rgba(51, 255, 51, 0.2);
+		--accent-hover: #66ff66;
+		--success: #33ff33;
+		--success-glow: rgba(51, 255, 51, 0.2);
+		--danger: #ff3333;
+		--gradient-1: linear-gradient(135deg, #33ff33 0%, #66ff66 50%, #aaffaa 100%);
+		--gradient-2: linear-gradient(135deg, #0a0a0a 0%, #1a1a1a 100%);
+		--radius: 0;
+		--radius-sm: 0;
+		--radius-lg: 0;
+		--font: 'Zpix', 'Press Start 2P', 'Courier New', monospace;
+		--font-mono: 'Zpix', 'Press Start 2P', 'Courier New', monospace;
 	}
 
 	:global(html) {
 		font-family: var(--font);
 		background: var(--bg);
 		color: var(--text);
-		-webkit-font-smoothing: antialiased;
-		-moz-osx-font-smoothing: grayscale;
+		font-size: 14px;
+		-webkit-font-smoothing: none;
+		-moz-osx-font-smoothing: unset;
+		image-rendering: pixelated;
 	}
 
 	:global(body) {
 		min-height: 100dvh;
 		overflow-x: hidden;
+		position: relative;
 	}
 
 	:global(a) {
 		color: inherit;
-		text-decoration: none;
+		text-decoration: underline;
+		text-underline-offset: 3px;
+	}
+
+	:global(a:hover) {
+		color: var(--accent-hover);
 	}
 
 	:global(button) {
@@ -59,23 +70,48 @@
 		cursor: pointer;
 		border: none;
 		outline: none;
+		image-rendering: pixelated;
 	}
 
 	:global(input) {
 		font-family: inherit;
 		border: none;
 		outline: none;
-	}
-
-	/* Scrollbar */
-	:global(::-webkit-scrollbar) {
-		width: 6px;
-	}
-	:global(::-webkit-scrollbar-track) {
 		background: transparent;
 	}
+
+	:global(::-webkit-scrollbar) {
+		width: 8px;
+	}
+	:global(::-webkit-scrollbar-track) {
+		background: var(--bg);
+	}
 	:global(::-webkit-scrollbar-thumb) {
-		background: var(--border);
-		border-radius: 3px;
+		background: var(--text-muted);
+		border: 1px solid var(--border);
+	}
+
+	/* ─── CRT scan-line overlay ─── */
+	.crt-overlay {
+		position: fixed;
+		inset: 0;
+		z-index: 9999;
+		pointer-events: none;
+		background: repeating-linear-gradient(
+			0deg,
+			rgba(0, 0, 0, 0.08) 0px,
+			rgba(0, 0, 0, 0.08) 1px,
+			transparent 1px,
+			transparent 3px
+		);
+	}
+
+	/* ─── NES.css overrides ─── */
+	:global(.nes-btn) {
+		border-image-repeat: stretch !important;
+		font-family: var(--font) !important;
+	}
+	:global(.nes-input) {
+		font-family: var(--font) !important;
 	}
 </style>
