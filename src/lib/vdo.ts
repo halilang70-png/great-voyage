@@ -276,6 +276,8 @@ export class ClipboardBridge {
 			console.warn('[clipdrop] image send requires P2P — fallback is text-only');
 			return;
 		}
+		const sizeKB = Math.round(dataUrl.length * 0.75 / 1024);
+		console.log(`[clipdrop] 🖼️ sendImage: ~${sizeKB}KB`);
 		const payload: ClipboardPayload = {
 			type: 'image',
 			content: dataUrl,

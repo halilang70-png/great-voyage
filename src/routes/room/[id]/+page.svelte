@@ -6,6 +6,7 @@
 	import { playReceive, playSend } from '$lib/sound';
 	import { getSettings, saveSettings, loadHistory, saveHistory, type Settings } from '$lib/storage';
 	import { renderContent, detectMode } from '$lib/renderer';
+	import { compressImage } from '$lib/image';
 	import QRCode from '$lib/QRCode.svelte';
 
 	const roomId = $derived($page.params.id ?? 'unknown');
@@ -114,11 +115,14 @@
 				for (const type of item.types) {
 					if (type.startsWith('image/')) {
 						const blob = await item.getType(type);
-						const reader = new FileReader();
-						reader.onload = async () => {
-							await bridge?.sendImage(reader.result as string);
-						};
-						reader.readAsDataURL(blob);
+						console.log(`[clipdrop] 📋 paste image: ${type}, ${(blob.size / 1024).toFixed(0)}KB`);
+						try {
+							const dataUrl = await compressImage(blob);
+							console.log(`[clipdrop] 📋 compressed: ${(dataUrl.length * 0.75 / 1024).toFixed(0)}KB`);
+							await bridge?.sendImage(dataUrl);
+						} catch (err) {
+							console.error('[clipdrop] image compress failed:', err);
+						}
 						return;
 					}
 				}
@@ -134,11 +138,13 @@
 		if (mode !== 'p2p') return;
 		const file = e.dataTransfer?.files[0];
 		if (!file || !file.type.startsWith('image/')) return;
-		const reader = new FileReader();
-		reader.onload = async () => {
-			await bridge?.sendImage(reader.result as string);
-		};
-		reader.readAsDataURL(file);
+		console.log(`[clipdrop] 📎 drop image: ${file.type}, ${(file.size / 1024).toFixed(0)}KB`);
+		compressImage(file).then(async (dataUrl) => {
+			console.log(`[clipdrop] 📎 compressed: ${(dataUrl.length * 0.75 / 1024).toFixed(0)}KB`);
+			await bridge?.sendImage(dataUrl);
+		}).catch(err => {
+			console.error('[clipdrop] image compress failed:', err);
+		});
 	}
 
 	function handleDragOver(e: DragEvent) {
