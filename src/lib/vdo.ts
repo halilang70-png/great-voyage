@@ -267,15 +267,23 @@ export class ClipboardBridge {
 
 		sdk.addEventListener('dataChannelClose', (e: CustomEvent) => {
 			console.log('[clipdrop] dataChannelClose');
-			// Debounce: wait 2s before reacting.
-			// SDK fires close for old channels during ICE restart/new connection.
-			// If dataChannelOpen fires within 2s, this is just connection replacement — skip.
+			// Immediately mark P2P as not ready so new sends are queued (or fail)
+			// rather than being written to a closing channel. The queue is preserved
+			// so messages sent during the close->open window are flushed once the
+			// new channel finishes its handshake.
+			this._p2pReady = false;
+			this._handshakePending = false;
+			this._handshakeAcked = false;
+			if (this._handshakeTimer) {
+				clearTimeout(this._handshakeTimer);
+				this._handshakeTimer = null;
+			}
+			// Debounce mode change + discovery retry: SDK fires close for old
+			// channels during ICE restart; if dataChannelOpen fires within 2s
+			// this is just connection replacement and we skip the reconnect work.
 			if (this._dcCloseTimer) clearTimeout(this._dcCloseTimer);
 			this._dcCloseTimer = setTimeout(() => {
 				this._dcCloseTimer = null;
-				this._p2pReady = false;
-				this._handshakePending = false;
-				this._handshakeAcked = false;
 				this.setMode('connecting');
 				if (this._joined && this.sdk) {
 					this.startDiscoveryRetry(this.sdk);
@@ -285,7 +293,19 @@ export class ClipboardBridge {
 
 		// Incoming P2P data
 		sdk.addEventListener('dataReceived', (e: CustomEvent) => {
-			const payload = e.detail?.data ?? e.detail;
+			const raw = e.detail?.data ?? e.detail;
+			// SDK may deliver data as a JSON string (depending on transport path
+			// and SDK version); normalize to object so the shape checks below work.
+			// Without this, string payloads fell through to the warn branch and
+			// messages were silently dropped.
+			let payload: any = raw;
+			if (typeof payload === 'string') {
+				try {
+					payload = JSON.parse(payload);
+				} catch {
+					// not JSON — leave as string; will hit the warn branch below
+				}
+			}
 			// Handle P2P readiness handshake (internal protocol)
 			if (payload && typeof payload === 'object' && 'clipdrop' in payload) {
 				this._handleHandshake(payload, sdk);
@@ -418,8 +438,11 @@ export class ClipboardBridge {
 			this._p2pReady = true;
 			this.setMode('p2p');
 			console.log('[clipdrop] P2P fully ready (handshake complete)');
-			this._flushQueue();
 		}
+		// Always flush the queue - even if P2P was already marked ready,
+		// messages queued during a re-handshake (e.g. after ICE restart)
+		// must still be delivered. Without this they were silently lost.
+		this._flushQueue();
 	}
 
 	/** Send all queued messages now that P2P is ready */
@@ -430,11 +453,20 @@ export class ClipboardBridge {
 		this._msgQueue = [];
 		for (const payload of queue) {
 			try {
-				this.sdk?.sendData(payload);
-				this._onClipboard?.(payload);
-				console.log('[clipdrop] queued P2P send');
+				const ok = this.sdk?.sendData(payload);
+				if (ok) {
+					this._onClipboard?.(payload);
+					console.log('[clipdrop] queued P2P send');
+					continue;
+				}
+				console.warn('[clipdrop] queued P2P sendData returned false, re-queuing');
 			} catch (err) {
-				console.warn('[clipdrop] queued P2P send failed:', err);
+				console.warn('[clipdrop] queued P2P send failed, re-queuing:', err);
+			}
+			// Re-queue for the next handshake/open event; cap to avoid
+			// unbounded growth if the channel stays broken.
+			if (this._msgQueue.length < 20) {
+				this._msgQueue.push(payload);
 			}
 		}
 	}
@@ -506,14 +538,21 @@ export class ClipboardBridge {
 		if (this._p2pReady && this.sdk) {
 			for (let i = 0; i < 3; i++) {
 				try {
-					this.sdk.sendData(payload);
-					this._onClipboard?.(payload);
-					console.log('[clipdrop] P2P send');
-					return true;
+					// sendData returns boolean: false means the channel could not
+					// accept the message (buffer full, channel closing, etc.).
+					// Without checking this, the UI reported success while the
+					// message was silently dropped.
+					const ok = this.sdk.sendData(payload);
+					if (ok) {
+						this._onClipboard?.(payload);
+						console.log('[clipdrop] P2P send');
+						return true;
+					}
+					console.warn(`[clipdrop] P2P sendData returned false on attempt ${i + 1}`);
 				} catch (err) {
 					console.warn(`[clipdrop] P2P send attempt ${i + 1} failed:`, err);
-					if (i < 2) await sleep(500);
 				}
+				if (i < 2) await sleep(500);
 			}
 			console.warn('[clipdrop] P2P send failed after 3 attempts');
 			return false;
@@ -540,15 +579,25 @@ export class ClipboardBridge {
 				console.warn('[clipdrop] image send queued during handshake');
 				// Images are too large to queue safely; wait for handshake then retry
 				await new Promise<void>((resolve) => {
+					let settled = false;
+					let pollTimer: ReturnType<typeof setTimeout> | null = null;
+					const finish = () => {
+						if (settled) return;
+						settled = true;
+						if (pollTimer) clearTimeout(pollTimer);
+						if (timeoutTimer) clearTimeout(timeoutTimer);
+						resolve();
+					};
 					const check = () => {
+						if (settled) return;
 						if (this._p2pReady || !this._handshakePending) {
-							resolve();
+							finish();
 						} else {
-							setTimeout(check, 100);
+							pollTimer = setTimeout(check, 100);
 						}
 					};
 					// Max wait 4s (handshake timeout is 3s)
-					setTimeout(() => resolve(), 4000);
+					const timeoutTimer = setTimeout(finish, 4000);
 					check();
 				});
 				if (!this._p2pReady || !this.sdk) {
@@ -575,13 +624,16 @@ export class ClipboardBridge {
 		};
 		for (let i = 0; i < 3; i++) {
 			try {
-				this.sdk.sendData(payload);
-				this._onClipboard?.(payload);
-				return true;
+				const ok = this.sdk.sendData(payload);
+				if (ok) {
+					this._onClipboard?.(payload);
+					return true;
+				}
+				console.warn(`[clipdrop] sendImage sendData returned false on attempt ${i + 1}`);
 			} catch (err) {
 				console.warn(`[clipdrop] sendImage attempt ${i + 1} failed:`, err);
-				if (i < 2) await sleep(500);
 			}
+			if (i < 2) await sleep(500);
 		}
 		console.warn('[clipdrop] sendImage failed after 3 attempts');
 		return false;

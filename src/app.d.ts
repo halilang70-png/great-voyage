@@ -30,7 +30,7 @@ declare global {
 		disconnect(): void;
 		announce(options: { streamID: string; label?: string }): Promise<void>;
 		view(streamID: string, options?: { audio?: boolean; video?: boolean; label?: string }): Promise<void>;
-		sendData(data: unknown, target?: string | object): void;
+		sendData(data: unknown, target?: string | object): boolean;
 		stopPublishing(): void;
 		stopViewing(streamID?: string): void;
 		addEventListener(type: string, listener: (event: CustomEvent) => void): void;

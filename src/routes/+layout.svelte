@@ -46,6 +46,7 @@
 		font-size: 14px;
 		-webkit-font-smoothing: antialiased;
 		-moz-osx-font-smoothing: grayscale;
+		cursor: auto;
 	}
 
 	:global(body) {
@@ -58,6 +59,7 @@
 		color: inherit;
 		text-decoration: underline;
 		text-underline-offset: 3px;
+		cursor: pointer;
 	}
 
 	:global(a:hover) {
