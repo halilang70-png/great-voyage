@@ -17,6 +17,16 @@ export function compressImage(
 	maxHeight = MAX_HEIGHT,
 	quality = JPEG_QUALITY
 ): Promise<string> {
+	// GIF: preserve animation by skipping canvas (canvas only captures one frame)
+	if (file.type === 'image/gif' || (file instanceof File && file.name?.endsWith('.gif'))) {
+		return new Promise((resolve, reject) => {
+			const reader = new FileReader();
+			reader.onload = () => resolve(reader.result as string);
+			reader.onerror = () => reject(new Error('Failed to read GIF'));
+			reader.readAsDataURL(file);
+		});
+	}
+
 	return new Promise((resolve, reject) => {
 		const img = new Image();
 		const url = URL.createObjectURL(file);
