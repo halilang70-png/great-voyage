@@ -35,8 +35,8 @@
 		--radius: 0;
 		--radius-sm: 0;
 		--radius-lg: 0;
-		--font: 'Zpix', 'Press Start 2P', 'Courier New', monospace;
-		--font-mono: 'Zpix', 'Press Start 2P', 'Courier New', monospace;
+		--font: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+		--font-mono: 'JetBrains Mono', 'Fira Code', 'Cascadia Code', monospace;
 	}
 
 	:global(html) {
@@ -44,9 +44,8 @@
 		background: var(--bg);
 		color: var(--text);
 		font-size: 14px;
-		-webkit-font-smoothing: none;
-		-moz-osx-font-smoothing: unset;
-		image-rendering: pixelated;
+		-webkit-font-smoothing: antialiased;
+		-moz-osx-font-smoothing: grayscale;
 	}
 
 	:global(body) {
@@ -70,7 +69,6 @@
 		cursor: pointer;
 		border: none;
 		outline: none;
-		image-rendering: pixelated;
 	}
 
 	:global(input) {
@@ -106,12 +104,8 @@
 		);
 	}
 
-	/* ─── NES.css overrides ─── */
+	/* ─── NES.css tweaks ─── */
 	:global(.nes-btn) {
 		border-image-repeat: stretch !important;
-		font-family: var(--font) !important;
-	}
-	:global(.nes-input) {
-		font-family: var(--font) !important;
 	}
 </style>
