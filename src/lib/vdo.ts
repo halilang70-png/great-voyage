@@ -133,6 +133,7 @@ export class ClipboardBridge {
 			this._connected = false;
 			this._p2pReady = false;
 			this._joined = false;
+			this._knownStreamIds.clear(); // Old stream IDs won't be valid after reconnect
 			this._onConnectionChange?.(false);
 			if (this._mode === 'p2p') {
 				this.setMode('connecting');
@@ -184,6 +185,12 @@ export class ClipboardBridge {
 				this._onPeersChange?.(this.peers);
 			}
 			if (this._peers.size === 0) {
+				// No peers left — cancel any pending dataChannelClose debounce
+				// (peerDisconnected is a definitive signal, no need to wait)
+				if (this._dcCloseTimer) {
+					clearTimeout(this._dcCloseTimer);
+					this._dcCloseTimer = null;
+				}
 				this._p2pReady = false;
 				this.setMode('connecting');
 				// No peers left — start looking again
@@ -276,7 +283,9 @@ export class ClipboardBridge {
 	private startDiscoveryRetry(sdk: VDONinjaSDK) {
 		if (this._retryTimer) clearInterval(this._retryTimer);
 		this._retryTimer = setInterval(async () => {
-			if (this._p2pReady) {
+			// Stop if P2P is ready, or we already have a peer connected
+			// (prevents redundant announce+view while waiting for dataChannelOpen)
+			if (this._p2pReady || this._peers.size > 0) {
 				if (this._retryTimer) clearInterval(this._retryTimer);
 				return;
 			}
@@ -341,18 +350,18 @@ export class ClipboardBridge {
 			senderId: this.streamId
 		};
 
-		if (this._mode === 'connecting') {
-			// User tried to send but P2P hasn't connected yet — fall back now
-			console.log('[clipdrop] P2P not ready at send time — switching to HTTP fallback');
-			this.startFallback();
-		}
-
-		if (this._mode === 'p2p' && this.sdk) {
-			// P2P send
+		if (this._p2pReady && this.sdk) {
+			// P2P send — use _p2pReady (not _mode) so brief 'connecting'
+			// during ICE restart doesn't accidentally push us into fallback
 			console.log('[clipdrop] 📤 P2P send:', payload);
 			this.sdk.sendData(payload);
 			this._onClipboard?.(payload);
 		} else {
+			// Not P2P — enter fallback mode if not already there
+			if (this._mode !== 'fallback') {
+				console.log('[clipdrop] P2P not ready — switching to HTTP fallback');
+				this.startFallback();
+			}
 			// HTTP fallback — store in KV
 			console.log('[clipdrop] 📤 fallback send:', payload);
 			try {
@@ -369,12 +378,17 @@ export class ClipboardBridge {
 	}
 
 	async sendImage(dataUrl: string) {
-		if (this._mode !== 'p2p' || !this.sdk) {
+		if (!this._p2pReady || !this.sdk) {
 			console.warn('[clipdrop] image send requires P2P — fallback is text-only');
 			return;
 		}
-		const sizeKB = Math.round(dataUrl.length * 0.75 / 1024);
+		const rawBytes = Math.round((dataUrl.length - 22) * 0.75);
+		const sizeKB = Math.round(rawBytes / 1024);
 		console.log(`[clipdrop] 🖼️ sendImage: ~${sizeKB}KB`);
+		if (rawBytes > 250_000) {
+			console.warn(`[clipdrop] 🖼️ image too large for DataChannel (~${sizeKB}KB > 250KB limit), skipping`);
+			return;
+		}
 		const payload: ClipboardPayload = {
 			type: 'image',
 			content: dataUrl,
