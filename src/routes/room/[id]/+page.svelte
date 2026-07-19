@@ -26,6 +26,18 @@
 	let hoverUrl = $state<string | null>(null);
 	let hoverPos = $state({ x: 0, y: 0 });
 
+	type Toast = { id: number; text: string; type: 'info' | 'warn' | 'error' | 'success' };
+	let toasts = $state<Toast[]>([]);
+	let _toastId = 0;
+	function pushToast(text: string, type: Toast['type'] = 'info', ms = 4000) {
+		const id = ++_toastId;
+		toasts = [...toasts, { id, text, type }];
+		if (ms > 0) {
+			setTimeout(() => { toasts = toasts.filter(t => t.id !== id); }, ms);
+		}
+	}
+	let prevMode = $state<ConnectionMode>('connecting');
+
 	let roomUrl = $derived(typeof window !== 'undefined' ? window.location.href : '');
 
 	let statusText = $derived.by(() => {
@@ -83,8 +95,19 @@
 	}
 
 	function handleModeChange(m: ConnectionMode) {
+		const prev = prevMode;
 		mode = m;
+		prevMode = m;
 		if (m === 'fallback' || m === 'p2p') connected = true;
+
+		// Show toast on meaningful transitions
+		if (prev === 'connecting' && m === 'p2p') {
+			pushToast('✅ P2P 已连接', 'success', 3000);
+		} else if (prev === 'p2p' && m === 'connecting') {
+			pushToast('⚡ P2P 断开，尝试重连中…', 'warn', 5000);
+		} else if (m === 'fallback' && prev !== 'fallback') {
+			pushToast('⚠️ P2P 不可用，已切换中转模式（仅文字）', 'warn', 6000);
+		}
 	}
 
 	function toggleSetting(key: keyof Settings) {
@@ -108,7 +131,10 @@
 	}
 
 	async function sendImageFromPaste() {
-		if (mode !== 'p2p') return;
+		if (mode !== 'p2p') {
+			pushToast('❌ 图片粘贴需要 P2P 连接', 'error', 4000);
+			return;
+		}
 		try {
 			const items = await navigator.clipboard.read();
 			for (const item of items) {
@@ -119,9 +145,16 @@
 						try {
 							const dataUrl = await compressImage(blob);
 							console.log(`[clipdrop] 📋 compressed: ${(dataUrl.length * 0.75 / 1024).toFixed(0)}KB`);
+							const rawBytes = Math.round((dataUrl.length - 22) * 0.75);
+							if (rawBytes > 250_000) {
+								pushToast(`❌ 图片太大（${Math.round(rawBytes / 1024)}KB > 250KB）`, 'error', 5000);
+								return;
+							}
 							await bridge?.sendImage(dataUrl);
+							pushToast('🖼️ 图片已发送', 'success', 2000);
 						} catch (err) {
 							console.error('[clipdrop] image compress failed:', err);
+							pushToast('❌ 图片处理失败', 'error', 4000);
 						}
 						return;
 					}
@@ -135,15 +168,25 @@
 	function handleFileDrop(e: DragEvent) {
 		e.preventDefault();
 		dragOver = false;
-		if (mode !== 'p2p') return;
+		if (mode !== 'p2p') {
+			pushToast('❌ 图片拖拽发送需要 P2P 连接', 'error', 4000);
+			return;
+		}
 		const file = e.dataTransfer?.files[0];
 		if (!file || !file.type.startsWith('image/')) return;
 		console.log(`[clipdrop] 📎 drop image: ${file.type}, ${(file.size / 1024).toFixed(0)}KB`);
 		compressImage(file).then(async (dataUrl) => {
 			console.log(`[clipdrop] 📎 compressed: ${(dataUrl.length * 0.75 / 1024).toFixed(0)}KB`);
+			const rawBytes = Math.round((dataUrl.length - 22) * 0.75);
+			if (rawBytes > 250_000) {
+				pushToast(`❌ 图片太大（${Math.round(rawBytes / 1024)}KB > 250KB）`, 'error', 5000);
+				return;
+			}
 			await bridge?.sendImage(dataUrl);
+			pushToast('🖼️ 图片已发送', 'success', 2000);
 		}).catch(err => {
 			console.error('[clipdrop] image compress failed:', err);
+			pushToast('❌ 图片处理失败', 'error', 4000);
 		});
 	}
 
@@ -396,7 +439,19 @@
 						<!-- svelte-ignore a11y_mouse_events_have_key_events -->
 						<div class="msg-rendered" onmouseover={handleLinkHover}>
 							{@html renderContent(item.content)}
-						</div>
+	<!-- Toast notifications -->
+	{#if toasts.length > 0}
+		<div class="toast-container">
+			{#each toasts as toast (toast.id)}
+				<!-- svelte-ignore a11y_click_events_have_key_events -->
+				<!-- svelte-ignore a11y_no_static_element_interactions -->
+				<div class="toast toast-{toast.type}" onclick={() => toasts = toasts.filter(t => t.id !== toast.id)}>
+					{toast.text}
+				</div>
+			{/each}
+		</div>
+	{/if}
+</div>
 						<button class="copy-btn" onclick={() => copyToClipboard(item.content, i)} title="copy to clipboard">
 							{#if copiedIndex === i}
 								<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--success)" stroke-width="2.5" stroke-linecap="round">
@@ -725,6 +780,27 @@
 	.sync-btn:hover:not(:disabled) { background: var(--accent-glow); color: var(--accent); }
 	@keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
 	.spin { animation: spin 0.8s linear infinite; }
+
+	/* Toast notifications */
+	.toast-container {
+		position: fixed; bottom: 80px; left: 50%; transform: translateX(-50%);
+		z-index: 200; display: flex; flex-direction: column; gap: 8px;
+		pointer-events: none; max-width: 400px; width: calc(100% - 32px);
+	}
+	.toast {
+		padding: 10px 16px; border-radius: var(--radius);
+		font-size: 0.82rem; font-weight: 500; text-align: center;
+		cursor: pointer; pointer-events: auto;
+		animation: toastIn 0.2s ease;
+		box-shadow: 0 4px 20px rgba(0,0,0,0.4);
+		backdrop-filter: blur(12px);
+	}
+	.toast-info { background: rgba(99, 102, 241, 0.15); border: 1px solid rgba(99, 102, 241, 0.3); color: var(--accent); }
+	.toast-success { background: rgba(34, 197, 94, 0.15); border: 1px solid rgba(34, 197, 94, 0.3); color: #22c55e; }
+	.toast-warn { background: rgba(245, 158, 11, 0.15); border: 1px solid rgba(245, 158, 11, 0.3); color: #f59e0b; }
+	.toast-error { background: rgba(239, 68, 68, 0.15); border: 1px solid rgba(239, 68, 68, 0.3); color: #ef4444; }
+	@keyframes toastIn { from { opacity: 0; transform: translateY(12px); } to { opacity: 1; transform: translateY(0); } }
+	@keyframes toastOut { from { opacity: 1; } to { opacity: 0; transform: translateY(-8px); } }
 
 	@media (max-width: 480px) {
 		.msg { max-width: 90%; }
