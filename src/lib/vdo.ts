@@ -43,6 +43,7 @@ export class ClipboardBridge {
 	private _joined = false;
 	private _retryTimer: ReturnType<typeof setInterval> | null = null;
 	private _knownStreamIds = new Set<string>();
+	private _dcCloseTimer: ReturnType<typeof setTimeout> | null = null;
 
 	constructor(room: string) {
 		this.room = room;
@@ -207,18 +208,29 @@ export class ClipboardBridge {
 		// Data channel is open — P2P is working!
 		sdk.addEventListener('dataChannelOpen', (e: CustomEvent) => {
 			console.log('[clipdrop] 🔗 dataChannelOpen:', e.detail);
+			// Cancel any pending close debounce — this is a fresh channel
+			if (this._dcCloseTimer) {
+				clearTimeout(this._dcCloseTimer);
+				this._dcCloseTimer = null;
+			}
 			this._p2pReady = true;
 			this.setMode('p2p');
 		});
 
 		sdk.addEventListener('dataChannelClose', (e: CustomEvent) => {
 			console.log('[clipdrop] 🔗❌ dataChannelClose:', e.detail);
-			this._p2pReady = false;
-			this.setMode('connecting');
-			// Restart peer discovery — the channel may re-open with same or new peer
-			if (this._joined && this.sdk) {
-				this.startDiscoveryRetry(this.sdk);
-			}
+			// Debounce: wait 2s before reacting.
+			// SDK fires close for old channels during ICE restart/new connection.
+			// If dataChannelOpen fires within 2s, this is just connection replacement — skip.
+			if (this._dcCloseTimer) clearTimeout(this._dcCloseTimer);
+			this._dcCloseTimer = setTimeout(() => {
+				this._dcCloseTimer = null;
+				this._p2pReady = false;
+				this.setMode('connecting');
+				if (this._joined && this.sdk) {
+					this.startDiscoveryRetry(this.sdk);
+				}
+			}, 2000);
 		});
 
 		// Incoming P2P data
@@ -375,6 +387,7 @@ export class ClipboardBridge {
 
 	destroy() {
 		if (this._retryTimer) clearInterval(this._retryTimer);
+		if (this._dcCloseTimer) clearTimeout(this._dcCloseTimer);
 		if (this.sdk) {
 			this.sdk.leaveRoom();
 			this.sdk.disconnect();
