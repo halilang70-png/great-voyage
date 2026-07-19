@@ -8,6 +8,8 @@
 	import { renderContent, detectMode } from '$lib/renderer';
 	import { compressImage } from '$lib/image';
 	import QRCode from '$lib/QRCode.svelte';
+	import Whiteboard from '$lib/Whiteboard.svelte';
+	import type { WhiteboardMsg } from '$lib/vdo';
 
 	const roomId = $derived($page.params.id ?? 'unknown');
 
@@ -23,6 +25,7 @@
 	let settings = $state<Settings>(getSettings());
 	let showQR = $state(false);
 	let showSettings = $state(false);
+	let showWhiteboard = $state(false);
 	let hoverUrl = $state<string | null>(null);
 	let hoverPos = $state({ x: 0, y: 0 });
 
@@ -226,6 +229,24 @@
 		}
 	}
 
+	function handleWhiteboard(msg: WhiteboardMsg) {
+		// Forward to the Whiteboard component via the registered incoming
+		// handler. While the whiteboard is closed we just drop incoming
+		// strokes (peer is drawing on their side).
+		whiteboardIncoming?.(msg);
+	}
+
+	// The Whiteboard component registers its incoming handler here so we
+	// can route P2P messages to it without prop reactivity churn.
+	let whiteboardIncoming: ((msg: WhiteboardMsg) => void) | null = null;
+	function regWhiteboardIncoming(handler: (msg: WhiteboardMsg) => void) {
+		whiteboardIncoming = handler;
+	}
+	function sendWhiteboard(msg: WhiteboardMsg) {
+		const ok = bridge?.sendWhiteboard(msg);
+		if (!ok) pushToast('P2P 未就绪，白板未发送', 'warn', 2000);
+	}
+
 	function goBack() {
 		bridge?.destroy();
 		goto('/');
@@ -285,6 +306,7 @@
 		bridge.onPeersChange(handlePeersChange);
 		bridge.onConnectionChange(handleConnectionChange);
 		bridge.onModeChange(handleModeChange);
+		bridge.onWhiteboard(handleWhiteboard);
 
 		try {
 			await bridge.init();
@@ -362,6 +384,14 @@
 		</div>
 	{/if}
 
+	{#if showWhiteboard}
+		<Whiteboard
+			send={sendWhiteboard}
+			onIncoming={regWhiteboardIncoming}
+			onClose={() => (showWhiteboard = false)}
+		/>
+	{/if}
+
 	<!-- URL hover preview -->
 	{#if hoverUrl}
 		{@const display = parseUrlDisplay(hoverUrl)}
@@ -385,6 +415,8 @@
 		</div>
 
 		<button class="nes-btn is-small" onclick={() => showQR = !showQR} title="QR 码">QR</button>
+
+		<button class="nes-btn is-small" onclick={() => showWhiteboard = true} title="白板" disabled={mode !== 'p2p'}>✏</button>
 
 		<button class="nes-btn is-small" onclick={() => showSettings = !showSettings} title="设置">⚙</button>
 	</header>

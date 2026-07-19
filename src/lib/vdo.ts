@@ -23,6 +23,14 @@ export interface ClipboardPayload {
 	senderId: string;
 }
 
+// Whiteboard realtime messages. P2P only — not persisted, not queued for
+// fallback. Designed to be small and frequent (pointer moves).
+export type WhiteboardMsg =
+	| { kind: 'stroke-start'; color: string; size: number; x: number; y: number; ts: number }
+	| { kind: 'stroke-move'; x: number; y: number; ts: number }
+	| { kind: 'stroke-end'; ts: number }
+	| { kind: 'clear'; ts: number };
+
 export type ConnectionMode = 'p2p' | 'fallback' | 'connecting';
 
 const sleep = (ms: number) => new Promise(r => setTimeout(r, ms));
@@ -35,6 +43,7 @@ export class ClipboardBridge {
 	private streamId: string;
 	private _peers: Map<string, PeerInfo> = new Map();
 	private _onClipboard: ((payload: ClipboardPayload) => void) | null = null;
+	private _onWhiteboard: ((msg: WhiteboardMsg) => void) | null = null;
 	private _onPeersChange: ((peers: PeerInfo[]) => void) | null = null;
 	private _onConnectionChange: ((connected: boolean) => void) | null = null;
 	private _onModeChange: ((mode: ConnectionMode) => void) | null = null;
@@ -81,6 +90,10 @@ export class ClipboardBridge {
 
 	onClipboard(fn: (payload: ClipboardPayload) => void) {
 		this._onClipboard = fn;
+	}
+
+	onWhiteboard(fn: (msg: WhiteboardMsg) => void) {
+		this._onWhiteboard = fn;
 	}
 
 	onPeersChange(fn: (peers: PeerInfo[]) => void) {
@@ -149,8 +162,16 @@ export class ClipboardBridge {
 		const sdk = new SDK({
 			debug: true,
 			password: false,
-			autoRecover: true,
-			autoRelay: true
+			// autoRecover/autoRelay disabled: both cause the SDK to proactively
+			// tear down and rebuild the DataChannel (even on loopback), which
+			// manifested as the 'alternating send/fail' bug — every rebuild
+			// window dropped or failed the next message. Video conferencing
+			// tolerates this because media tracks survive the rebuild, but
+			// for a data-only chat the DataChannel IS the payload. We handle
+			// reconnection ourselves via the `disconnected` event + manual
+			// discovery retry, so the SDK doesn't need to do it.
+			autoRecover: false,
+			autoRelay: false
 		});
 		this.sdk = sdk;
 
@@ -261,29 +282,36 @@ export class ClipboardBridge {
 				clearTimeout(this._dcCloseTimer);
 				this._dcCloseTimer = null;
 			}
-			// Don't mark P2P ready yet — wait for handshake ack from peer
+			// Require a fresh handshake to verify the new channel is truly ready.
+			// Messages sent during the brief handshake window (~100ms on LAN) are
+			// queued by sendText() and flushed once the handshake ack arrives.
+			// This prevents writing to a half-open channel that just emitted
+			// dataChannelOpen but is not actually bidirectionally ready yet.
+			this._p2pReady = false;
 			this._startHandshake(sdk);
 		});
 
 		sdk.addEventListener('dataChannelClose', (e: CustomEvent) => {
 			console.log('[clipdrop] dataChannelClose');
-			// Immediately mark P2P as not ready so new sends are queued (or fail)
-			// rather than being written to a closing channel. The queue is preserved
-			// so messages sent during the close->open window are flushed once the
-			// new channel finishes its handshake.
-			this._p2pReady = false;
-			this._handshakePending = false;
-			this._handshakeAcked = false;
-			if (this._handshakeTimer) {
-				clearTimeout(this._handshakeTimer);
-				this._handshakeTimer = null;
-			}
-			// Debounce mode change + discovery retry: SDK fires close for old
-			// channels during ICE restart; if dataChannelOpen fires within 2s
-			// this is just connection replacement and we skip the reconnect work.
+			// Debounce: wait 2s before reacting. The VDO Ninja SDK fires close
+			// for old channels during ICE restart / channel replacement, then
+			// immediately fires dataChannelOpen for the new one. If we marked
+			// P2P not-ready on every close, sends during the close->open window
+			// would fail instantly (the 'alternating send/fail' bug). Instead
+			// we keep _p2pReady=true through transient closes; dataChannelOpen
+			// resets it to false and runs a fresh handshake to verify the new
+			// channel. If no dataChannelOpen arrives within 2s, the channel is
+			// really dead - then we mark not-ready and trigger reconnect.
 			if (this._dcCloseTimer) clearTimeout(this._dcCloseTimer);
 			this._dcCloseTimer = setTimeout(() => {
 				this._dcCloseTimer = null;
+				this._p2pReady = false;
+				this._handshakePending = false;
+				this._handshakeAcked = false;
+				if (this._handshakeTimer) {
+					clearTimeout(this._handshakeTimer);
+					this._handshakeTimer = null;
+				}
 				this.setMode('connecting');
 				if (this._joined && this.sdk) {
 					this.startDiscoveryRetry(this.sdk);
@@ -309,6 +337,11 @@ export class ClipboardBridge {
 			// Handle P2P readiness handshake (internal protocol)
 			if (payload && typeof payload === 'object' && 'clipdrop' in payload) {
 				this._handleHandshake(payload, sdk);
+				return;
+			}
+			// Whiteboard realtime messages — dispatched separately, not persisted
+			if (payload && typeof payload === 'object' && 'kind' in payload) {
+				this._onWhiteboard?.(payload as WhiteboardMsg);
 				return;
 			}
 			if (payload && typeof payload === 'object' && 'type' in payload && 'content' in payload) {
@@ -637,6 +670,21 @@ export class ClipboardBridge {
 		}
 		console.warn('[clipdrop] sendImage failed after 3 attempts');
 		return false;
+	}
+
+	/**
+	 * Send a whiteboard realtime message. Best-effort: if P2P is not ready
+	 * the message is dropped (whiteboard state is soft — peers just see a
+	 * gap). Returns true if accepted by the channel.
+	 */
+	sendWhiteboard(msg: WhiteboardMsg): boolean {
+		if (!this._p2pReady || !this.sdk) return false;
+		try {
+			return this.sdk.sendData(msg);
+		} catch (err) {
+			console.warn('[clipdrop] whiteboard send failed:', err);
+			return false;
+		}
 	}
 
 	destroy() {
