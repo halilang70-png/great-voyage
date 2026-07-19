@@ -141,10 +141,8 @@
 				for (const type of item.types) {
 					if (type.startsWith('image/')) {
 						const blob = await item.getType(type);
-						console.log(`[clipdrop] 📋 paste image: ${type}, ${(blob.size / 1024).toFixed(0)}KB`);
 						try {
 							const dataUrl = await compressImage(blob);
-							console.log(`[clipdrop] 📋 compressed: ${(dataUrl.length * 0.75 / 1024).toFixed(0)}KB`);
 							const rawBytes = Math.round((dataUrl.length - 22) * 0.75);
 							if (rawBytes > 250_000) {
 								pushToast(`❌ 图片太大（${Math.round(rawBytes / 1024)}KB > 250KB）`, 'error', 5000);
@@ -174,9 +172,7 @@
 		}
 		const file = e.dataTransfer?.files[0];
 		if (!file || !file.type.startsWith('image/')) return;
-		console.log(`[clipdrop] 📎 drop image: ${file.type}, ${(file.size / 1024).toFixed(0)}KB`);
 		compressImage(file).then(async (dataUrl) => {
-			console.log(`[clipdrop] 📎 compressed: ${(dataUrl.length * 0.75 / 1024).toFixed(0)}KB`);
 			const rawBytes = Math.round((dataUrl.length - 22) * 0.75);
 			if (rawBytes > 250_000) {
 				pushToast(`❌ 图片太大（${Math.round(rawBytes / 1024)}KB > 250KB）`, 'error', 5000);

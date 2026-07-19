@@ -95,7 +95,6 @@ export class ClipboardBridge {
 		for (const peer of list) {
 			if (peer.streamID && peer.streamID !== this.streamId) {
 				this._knownStreamIds.add(peer.streamID);
-				console.log(`[clipdrop] 👁️ viewing listed peer: ${peer.streamID}`);
 				sdk.view(peer.streamID).catch((err: unknown) => {
 					console.warn('[clipdrop] view listed peer failed:', err);
 				});
@@ -146,21 +145,19 @@ export class ClipboardBridge {
 
 		// Peer events
 		sdk.addEventListener('peerConnected', (e: CustomEvent) => {
-			console.log('[clipdrop] 👤 peerConnected:', e.detail);
+			console.log('[clipdrop] peerConnected:', e.detail.uuid);
 			const { uuid, streamID } = e.detail;
 			this._peers.set(uuid, { uuid, streamID: streamID || '', label: 'Peer', connected: true });
 			this._onPeersChange?.(this.peers);
 			// If streamID is available right away, view immediately
 			if (streamID && streamID !== this.streamId) {
-				console.log(`[clipdrop] 👁️ viewing from peerConnected: ${streamID}`);
 				sdk.view(streamID).catch((err: unknown) => {
-					console.warn('[clipdrop] view from peerConnected failed:', err);
+					console.warn('[clipdrop] view peer failed:', err);
 				});
 			}
 		});
 
 		sdk.addEventListener('peerInfo', (e: CustomEvent) => {
-			console.log('[clipdrop] ℹ️ peerInfo:', JSON.stringify(e.detail));
 			const { uuid, streamID, info } = e.detail;
 			const peer = this._peers.get(uuid);
 			if (peer) {
@@ -170,15 +167,14 @@ export class ClipboardBridge {
 			}
 			// Auto-view discovered peer to establish bidirectional data channel
 			if (streamID && streamID !== this.streamId) {
-				console.log(`[clipdrop] 👁️ auto-viewing peer streamID: ${streamID}`);
 				sdk.view(streamID).catch((err: unknown) => {
-					console.warn('[clipdrop] view failed:', err);
+					console.warn('[clipdrop] view peer failed:', err);
 				});
 			}
 		});
 
 		sdk.addEventListener('peerDisconnected', (e: CustomEvent) => {
-			console.log('[clipdrop] 👤❌ peerDisconnected:', e.detail);
+			console.log('[clipdrop] peerDisconnected:', e.detail.uuid);
 			const { uuid } = e.detail;
 			if (uuid) {
 				this._peers.delete(uuid);
@@ -202,19 +198,17 @@ export class ClipboardBridge {
 
 		// Room listing — discover existing peers and view them
 		sdk.addEventListener('listing', (e: CustomEvent) => {
-			console.log('[clipdrop] 📋 listing:', JSON.stringify(e.detail));
 			this.viewListedPeers(e.detail, sdk);
 		});
 
 		// peerListing fires when room member list changes (new peer joins)
 		sdk.addEventListener('peerListing', (e: CustomEvent) => {
-			console.log('[clipdrop] 📋 peerListing:', JSON.stringify(e.detail));
 			this.viewListedPeers(e.detail, sdk);
 		});
 
 		// Data channel is open — P2P is working!
 		sdk.addEventListener('dataChannelOpen', (e: CustomEvent) => {
-			console.log('[clipdrop] 🔗 dataChannelOpen:', e.detail);
+			console.log('[clipdrop] dataChannelOpen');
 			// Cancel any pending close debounce — this is a fresh channel
 			if (this._dcCloseTimer) {
 				clearTimeout(this._dcCloseTimer);
@@ -225,7 +219,7 @@ export class ClipboardBridge {
 		});
 
 		sdk.addEventListener('dataChannelClose', (e: CustomEvent) => {
-			console.log('[clipdrop] 🔗❌ dataChannelClose:', e.detail);
+			console.log('[clipdrop] dataChannelClose');
 			// Debounce: wait 2s before reacting.
 			// SDK fires close for old channels during ICE restart/new connection.
 			// If dataChannelOpen fires within 2s, this is just connection replacement — skip.
@@ -242,12 +236,11 @@ export class ClipboardBridge {
 
 		// Incoming P2P data
 		sdk.addEventListener('dataReceived', (e: CustomEvent) => {
-			console.log('[clipdrop] 📨 dataReceived:', JSON.stringify(e.detail));
 			const payload = e.detail?.data ?? e.detail;
 			if (payload && typeof payload === 'object' && 'type' in payload && 'content' in payload) {
 				this._onClipboard?.(payload as ClipboardPayload);
 			} else {
-				console.warn('[clipdrop] 📨 unexpected data shape:', payload);
+				console.warn('[clipdrop] unexpected data shape:', payload);
 			}
 		});
 
@@ -263,9 +256,9 @@ export class ClipboardBridge {
 		this._joined = true;
 		try {
 			await sdk.joinRoom({ room: this.room, password: false });
-			console.log('[clipdrop] 🚀 joinRoom() done');
+			console.log('[clipdrop] joinRoom done');
 			await sdk.announce({ streamID: this.streamId, label: 'clipdrop' });
-			console.log('[clipdrop] 🚀 announce() done — waiting for peers');
+			console.log('[clipdrop] announce done — waiting for peers');
 			// Start periodic retry to handle race condition (both tabs join simultaneously)
 			this.startDiscoveryRetry(sdk);
 		} catch (err) {
@@ -353,7 +346,7 @@ export class ClipboardBridge {
 		if (this._p2pReady && this.sdk) {
 			// P2P send — use _p2pReady (not _mode) so brief 'connecting'
 			// during ICE restart doesn't accidentally push us into fallback
-			console.log('[clipdrop] 📤 P2P send:', payload);
+			console.log('[clipdrop] P2P send');
 			this.sdk.sendData(payload);
 			this._onClipboard?.(payload);
 		} else {
@@ -363,7 +356,6 @@ export class ClipboardBridge {
 				this.startFallback();
 			}
 			// HTTP fallback — store in KV
-			console.log('[clipdrop] 📤 fallback send:', payload);
 			try {
 				await fetch(`/api/sync?room=${this.room}`, {
 					method: 'POST',
@@ -371,6 +363,7 @@ export class ClipboardBridge {
 					body: JSON.stringify({ text, ts: payload.timestamp })
 				});
 				this._onClipboard?.(payload);
+				console.log('[clipdrop] fallback sent');
 			} catch (e) {
 				console.error('[clipdrop] fallback send failed:', e);
 			}
@@ -384,11 +377,11 @@ export class ClipboardBridge {
 		}
 		const rawBytes = Math.round((dataUrl.length - 22) * 0.75);
 		const sizeKB = Math.round(rawBytes / 1024);
-		console.log(`[clipdrop] 🖼️ sendImage: ~${sizeKB}KB`);
 		if (rawBytes > 250_000) {
-			console.warn(`[clipdrop] 🖼️ image too large for DataChannel (~${sizeKB}KB > 250KB limit), skipping`);
+			console.warn(`[clipdrop] image too large: ${sizeKB}KB > 250KB`);
 			return;
 		}
+		console.log(`[clipdrop] sendImage: ${sizeKB}KB`);
 		const payload: ClipboardPayload = {
 			type: 'image',
 			content: dataUrl,
