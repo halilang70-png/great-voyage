@@ -25,6 +25,8 @@ export interface ClipboardPayload {
 
 export type ConnectionMode = 'p2p' | 'fallback' | 'connecting';
 
+const sleep = (ms: number) => new Promise(r => setTimeout(r, ms));
+
 // No auto-timeout — fallback is only triggered on user action (send)
 
 export class ClipboardBridge {
@@ -44,6 +46,7 @@ export class ClipboardBridge {
 	private _retryTimer: ReturnType<typeof setInterval> | null = null;
 	private _knownStreamIds = new Set<string>();
 	private _dcCloseTimer: ReturnType<typeof setTimeout> | null = null;
+	private _userFallback = false;
 
 	constructor(room: string) {
 		this.room = room;
@@ -55,6 +58,7 @@ export class ClipboardBridge {
 	}
 
 	get mode(): ConnectionMode {
+		if (this._userFallback) return 'fallback';
 		return this._mode;
 	}
 
@@ -82,10 +86,33 @@ export class ClipboardBridge {
 		this._onModeChange = fn;
 	}
 
-	private setMode(mode: ConnectionMode) {
-		if (this._mode === mode) return;
-		this._mode = mode;
-		this._onModeChange?.(mode);
+	private setMode(newMode: ConnectionMode) {
+		if (this._mode === newMode) return;
+		this._mode = newMode;
+		this._onModeChange?.(this.mode);
+	}
+
+	/** Switch to manual fallback (KV) mode */
+	forceFallback() {
+		if (this._userFallback) return;
+		this._userFallback = true;
+		this.startFallback();
+		this._onModeChange?.(this.mode);
+	}
+
+	/** Switch back to P2P mode */
+	forceP2P() {
+		if (!this._userFallback) return;
+		this._userFallback = false;
+		// Re-evaluate mode
+		if (this._mode === 'p2p') {
+			this._onModeChange?.(this.mode);
+		} else {
+			this.setMode('connecting');
+			if (this._joined && this.sdk) {
+				this.startDiscoveryRetry(this.sdk);
+			}
+		}
 	}
 
 	private viewListedPeers(detail: any, sdk: VDONinjaSDK) {
@@ -335,7 +362,7 @@ export class ClipboardBridge {
 
 	// ─── Send ────────────────────────────────────────────────────
 
-	async sendText(text: string) {
+	async sendText(text: string): Promise<boolean> {
 		const payload: ClipboardPayload = {
 			type: 'text',
 			content: text,
@@ -343,19 +370,8 @@ export class ClipboardBridge {
 			senderId: this.streamId
 		};
 
-		if (this._p2pReady && this.sdk) {
-			// P2P send — use _p2pReady (not _mode) so brief 'connecting'
-			// during ICE restart doesn't accidentally push us into fallback
-			console.log('[clipdrop] P2P send');
-			this.sdk.sendData(payload);
-			this._onClipboard?.(payload);
-		} else {
-			// Not P2P — enter fallback mode if not already there
-			if (this._mode !== 'fallback') {
-				console.log('[clipdrop] P2P not ready — switching to HTTP fallback');
-				this.startFallback();
-			}
-			// HTTP fallback — store in KV
+		// Manual fallback — always use HTTP
+		if (this._userFallback) {
 			try {
 				await fetch(`/api/sync?room=${this.room}`, {
 					method: 'POST',
@@ -364,22 +380,48 @@ export class ClipboardBridge {
 				});
 				this._onClipboard?.(payload);
 				console.log('[clipdrop] fallback sent');
+				return true;
 			} catch (e) {
 				console.error('[clipdrop] fallback send failed:', e);
+				return false;
 			}
 		}
+
+		// P2P send with retry
+		if (this._p2pReady && this.sdk) {
+			for (let i = 0; i < 3; i++) {
+				try {
+					this.sdk.sendData(payload);
+					this._onClipboard?.(payload);
+					console.log('[clipdrop] P2P send');
+					return true;
+				} catch (err) {
+					console.warn(`[clipdrop] P2P send attempt ${i + 1} failed:`, err);
+					if (i < 2) await sleep(500);
+				}
+			}
+			console.warn('[clipdrop] P2P send failed after 3 attempts');
+			return false;
+		}
+
+		console.warn('[clipdrop] P2P not ready');
+		return false;
 	}
 
-	async sendImage(dataUrl: string) {
+	async sendImage(dataUrl: string): Promise<boolean> {
+		if (this._userFallback) {
+			console.warn('[clipdrop] image send requires P2P — currently in fallback mode');
+			return false;
+		}
 		if (!this._p2pReady || !this.sdk) {
-			console.warn('[clipdrop] image send requires P2P — fallback is text-only');
-			return;
+			console.warn('[clipdrop] image send requires P2P');
+			return false;
 		}
 		const rawBytes = Math.round((dataUrl.length - 22) * 0.75);
 		const sizeKB = Math.round(rawBytes / 1024);
 		if (rawBytes > 250_000) {
 			console.warn(`[clipdrop] image too large: ${sizeKB}KB > 250KB`);
-			return;
+			return false;
 		}
 		console.log(`[clipdrop] sendImage: ${sizeKB}KB`);
 		const payload: ClipboardPayload = {
@@ -388,8 +430,18 @@ export class ClipboardBridge {
 			timestamp: Date.now(),
 			senderId: this.streamId
 		};
-		this.sdk.sendData(payload);
-		this._onClipboard?.(payload);
+		for (let i = 0; i < 3; i++) {
+			try {
+				this.sdk.sendData(payload);
+				this._onClipboard?.(payload);
+				return true;
+			} catch (err) {
+				console.warn(`[clipdrop] sendImage attempt ${i + 1} failed:`, err);
+				if (i < 2) await sleep(500);
+			}
+		}
+		console.warn('[clipdrop] sendImage failed after 3 attempts');
+		return false;
 	}
 
 	destroy() {

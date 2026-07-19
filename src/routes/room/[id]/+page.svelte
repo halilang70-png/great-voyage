@@ -42,10 +42,12 @@
 
 	let statusText = $derived.by(() => {
 		if (mode === 'connecting') return 'waiting for peer…';
-		if (mode === 'fallback') return 'text sync (fallback)';
+		if (mode === 'fallback') return 'KV 模式';
 		if (peers.length > 0) return `${peers.length} peer${peers.length > 1 ? 's' : ''} · P2P`;
 		return 'P2P ready';
 	});
+
+	let modeToggleLabel = $derived(mode === 'fallback' ? '切回 P2P' : '切换 KV');
 
 	let statusDot = $derived.by(() => {
 		if (mode === 'connecting') return 'connecting';
@@ -98,15 +100,12 @@
 		const prev = prevMode;
 		mode = m;
 		prevMode = m;
-		if (m === 'fallback' || m === 'p2p') connected = true;
+		if (m === 'p2p' || m === 'fallback') connected = true;
 
-		// Show toast on meaningful transitions
 		if (prev === 'connecting' && m === 'p2p') {
 			pushToast('✅ P2P 已连接', 'success', 3000);
 		} else if (prev === 'p2p' && m === 'connecting') {
 			pushToast('⚡ P2P 断开，尝试重连中…', 'warn', 5000);
-		} else if (m === 'fallback' && prev !== 'fallback') {
-			pushToast('⚠️ P2P 不可用，已切换中转模式（仅文字）', 'warn', 6000);
 		}
 	}
 
@@ -115,12 +114,29 @@
 		saveSettings(settings);
 	}
 
+	function toggleMode() {
+		if (!bridge) return;
+		if (mode === 'fallback') {
+			bridge.forceP2P();
+			pushToast('🔄 已切换回 P2P 模式', 'info', 3000);
+		} else {
+			bridge.forceFallback();
+			pushToast('🔄 已切换到 KV 模式（仅文字）', 'info', 3000);
+		}
+	}
+
 	async function sendText() {
 		if (!inputText.trim() || !bridge) return;
 		const text = inputText.trim();
 		inputText = '';
-		await bridge.sendText(text);
-		playSend();
+		const ok = await bridge.sendText(text);
+		if (ok) {
+			playSend();
+		} else if (mode === 'fallback') {
+			pushToast('❌ KV 发送失败', 'error', 4000);
+		} else {
+			pushToast('❌ P2P 发送重试失败，可尝试切换 KV 模式', 'error', 5000);
+		}
 	}
 
 	async function syncLatest() {
@@ -148,8 +164,12 @@
 								pushToast(`❌ 图片太大（${Math.round(rawBytes / 1024)}KB > 250KB）`, 'error', 5000);
 								return;
 							}
-							await bridge?.sendImage(dataUrl);
-							pushToast('🖼️ 图片已发送', 'success', 2000);
+							const ok = await bridge?.sendImage(dataUrl);
+							if (ok) {
+								pushToast('🖼️ 图片已发送', 'success', 2000);
+							} else {
+								pushToast('❌ P2P 图片发送失败，可尝试切换 KV 模式', 'error', 5000);
+							}
 						} catch (err) {
 							console.error('[clipdrop] image compress failed:', err);
 							pushToast('❌ 图片处理失败', 'error', 4000);
@@ -178,8 +198,12 @@
 				pushToast(`❌ 图片太大（${Math.round(rawBytes / 1024)}KB > 250KB）`, 'error', 5000);
 				return;
 			}
-			await bridge?.sendImage(dataUrl);
-			pushToast('🖼️ 图片已发送', 'success', 2000);
+			const ok = await bridge?.sendImage(dataUrl);
+			if (ok) {
+				pushToast('🖼️ 图片已发送', 'success', 2000);
+			} else {
+				pushToast('❌ P2P 图片发送失败，可尝试切换 KV 模式', 'error', 5000);
+			}
 		}).catch(err => {
 			console.error('[clipdrop] image compress failed:', err);
 			pushToast('❌ 图片处理失败', 'error', 4000);
@@ -364,6 +388,7 @@
 			<div class="status">
 				<span class="status-dot {statusDot}"></span>
 				<span class="status-text">{statusText}</span>
+				<button class="mode-toggle" onclick={toggleMode} title={modeToggleLabel}>{modeToggleLabel}</button>
 			</div>
 		</div>
 
@@ -390,7 +415,8 @@
 	<!-- Fallback banner -->
 	{#if mode === 'fallback'}
 		<div class="fallback-banner">
-			<span>P2P 不通，走中转 · 发送后点 <strong>🔄 接收</strong> 同步对方内容</span>
+			<span>KV 模式 · 文字经服务器中转 · 发送后点 <strong>🔄 接收</strong> 同步对方内容</span>
+			<button class="fallback-dismiss" onclick={toggleMode}>✕</button>
 		</div>
 	{/if}
 
@@ -435,19 +461,7 @@
 						<!-- svelte-ignore a11y_mouse_events_have_key_events -->
 						<div class="msg-rendered" onmouseover={handleLinkHover}>
 							{@html renderContent(item.content)}
-	<!-- Toast notifications -->
-	{#if toasts.length > 0}
-		<div class="toast-container">
-			{#each toasts as toast (toast.id)}
-				<!-- svelte-ignore a11y_click_events_have_key_events -->
-				<!-- svelte-ignore a11y_no_static_element_interactions -->
-				<div class="toast toast-{toast.type}" onclick={() => toasts = toasts.filter(t => t.id !== toast.id)}>
-					{toast.text}
-				</div>
-			{/each}
-		</div>
-	{/if}
-</div>
+						</div>
 						<button class="copy-btn" onclick={() => copyToClipboard(item.content, i)} title="copy to clipboard">
 							{#if copiedIndex === i}
 								<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--success)" stroke-width="2.5" stroke-linecap="round">
@@ -515,6 +529,19 @@
 			</svg>
 		</button>
 	</div>
+
+	<!-- Toast notifications -->
+	{#if toasts.length > 0}
+		<div class="toast-container">
+			{#each toasts as toast (toast.id)}
+				<!-- svelte-ignore a11y_click_events_have_key_events -->
+				<!-- svelte-ignore a11y_no_static_element_interactions -->
+				<div class="toast toast-{toast.type}" onclick={() => toasts = toasts.filter(t => t.id !== toast.id)}>
+					{toast.text}
+				</div>
+			{/each}
+		</div>
+	{/if}
 </div>
 
 <style>
@@ -637,6 +664,14 @@
 	.status-dot.fallback { background: #f59e0b; animation: pulse 2s ease-in-out infinite; }
 	@keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.4; } }
 	.status-text { font-size: 0.75rem; color: var(--text-dim); }
+	.mode-toggle {
+		margin-left: 4px; padding: 2px 8px; border-radius: var(--radius-sm);
+		font-size: 0.65rem; font-weight: 600;
+		background: rgba(245, 158, 11, 0.12); color: #f59e0b;
+		transition: background 0.15s, opacity 0.15s;
+		white-space: nowrap;
+	}
+	.mode-toggle:hover { background: rgba(245, 158, 11, 0.25); }
 
 	/* Fallback banner */
 	.fallback-banner {
@@ -645,7 +680,15 @@
 		border-bottom: 1px solid rgba(245, 158, 11, 0.2);
 		font-size: 0.75rem; color: #f59e0b;
 		text-align: center; flex-shrink: 0;
+		display: flex; align-items: center; justify-content: center; gap: 8px;
 	}
+	.fallback-dismiss {
+		width: 20px; height: 20px; border-radius: 4px;
+		display: flex; align-items: center; justify-content: center;
+		font-size: 0.7rem; color: #f59e0b; flex-shrink: 0;
+		transition: background 0.15s;
+	}
+	.fallback-dismiss:hover { background: rgba(245, 158, 11, 0.15); }
 
 	/* History */
 	.history {
