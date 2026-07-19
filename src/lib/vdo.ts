@@ -177,6 +177,19 @@ export class ClipboardBridge {
 
 		sdk.addEventListener('peerDisconnected', (e: CustomEvent) => {
 			console.log('[clipdrop] 👤❌ peerDisconnected:', e.detail);
+			const { uuid } = e.detail;
+			if (uuid) {
+				this._peers.delete(uuid);
+				this._onPeersChange?.(this.peers);
+			}
+			if (this._peers.size === 0) {
+				this._p2pReady = false;
+				this.setMode('connecting');
+				// No peers left — start looking again
+				if (this._joined && this.sdk) {
+					this.startDiscoveryRetry(this.sdk);
+				}
+			}
 		});
 
 		// Room listing — discover existing peers and view them
@@ -200,6 +213,12 @@ export class ClipboardBridge {
 
 		sdk.addEventListener('dataChannelClose', (e: CustomEvent) => {
 			console.log('[clipdrop] 🔗❌ dataChannelClose:', e.detail);
+			this._p2pReady = false;
+			this.setMode('connecting');
+			// Restart peer discovery — the channel may re-open with same or new peer
+			if (this._joined && this.sdk) {
+				this.startDiscoveryRetry(this.sdk);
+			}
 		});
 
 		// Incoming P2P data
@@ -240,18 +259,16 @@ export class ClipboardBridge {
 	 * Periodically re-announce and try to view known peers.
 	 * Handles the race condition where both peers join simultaneously
 	 * and both get empty listings.
+	 * Runs until P2P is established.
 	 */
 	private startDiscoveryRetry(sdk: VDONinjaSDK) {
 		if (this._retryTimer) clearInterval(this._retryTimer);
-		let attempts = 0;
 		this._retryTimer = setInterval(async () => {
-			attempts++;
-			if (this._p2pReady || attempts > 30) {
-				// P2P connected or give up after 30s
+			if (this._p2pReady) {
 				if (this._retryTimer) clearInterval(this._retryTimer);
 				return;
 			}
-			// Re-announce so the other peer can discover us
+			// Re-announce so other peers can discover us
 			try {
 				await sdk.announce({ streamID: this.streamId, label: 'clipdrop' });
 			} catch {
@@ -263,7 +280,7 @@ export class ClipboardBridge {
 					sdk.view(streamId).catch(() => {});
 				}
 			}
-		}, 1000);
+		}, 2000);
 	}
 
 	// ─── HTTP Fallback (on-demand pull) ─────────────────────────

@@ -193,6 +193,13 @@
 		}
 	}
 
+	function preventFileDefault(e: DragEvent) {
+		if (e.dataTransfer?.types.includes('Files')) {
+			e.preventDefault();
+			e.stopPropagation();
+		}
+	}
+
 	// Persist history on change
 	let saveTimer: ReturnType<typeof setTimeout> | null = null;
 	function scheduleSave() {
@@ -221,11 +228,17 @@
 		} catch (e) {
 			console.error(e);
 		}
+
+		// Prevent browser from opening dragged files (images, etc.)
+		window.addEventListener('dragover', preventFileDefault);
+		window.addEventListener('drop', preventFileDefault);
 	});
 
 	onDestroy(() => {
 		if (saveTimer) clearTimeout(saveTimer);
 		bridge?.destroy();
+		window.removeEventListener('dragover', preventFileDefault);
+		window.removeEventListener('drop', preventFileDefault);
 	});
 </script>
 
