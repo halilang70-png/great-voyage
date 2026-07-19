@@ -557,16 +557,16 @@
 		position: fixed; top: 56px; right: 8px; z-index: 91;
 		min-width: 200px;
 		animation: fadeIn 0.15s ease;
-		font-size: 0.75rem;
+		font-size: 0.9rem;
 	}
 	.settings-title {
-		font-size: 0.65rem; font-weight: 700;
+		font-size: 0.8rem; font-weight: 700;
 		letter-spacing: 0.15em; color: var(--text-muted);
 		margin-bottom: 8px;
 	}
 	.toggle-row {
 		display: flex; align-items: center; justify-content: space-between;
-		font-size: 0.75rem; color: var(--text); cursor: pointer;
+		font-size: 0.9rem; color: var(--text); cursor: pointer;
 		padding: 4px 0;
 	}
 	.toggle {
@@ -589,10 +589,10 @@
 		z-index: 91;
 		display: flex; flex-direction: column; align-items: center; gap: 16px;
 		animation: fadeIn 0.15s ease;
-		font-size: 0.75rem;
+		font-size: 0.9rem;
 	}
 	.qr-popup-header { display: flex; align-items: center; width: 100%; justify-content: space-between; }
-	.qr-popup-title { font-size: 0.75rem; font-weight: 700; letter-spacing: 0.1em; color: var(--text-muted); }
+	.qr-popup-title { font-size: 0.9rem; font-weight: 700; letter-spacing: 0.1em; color: var(--text-muted); }
 
 	/* ─── Drop overlay ─── */
 	.drop-overlay {
@@ -603,7 +603,7 @@
 		align-items: center; justify-content: center; gap: 12px;
 		animation: fadeIn 0.15s ease;
 	}
-	.drop-text { font-size: 1rem; font-weight: 400; color: var(--text); }
+	.drop-text { font-size: 1.2rem; font-weight: 400; color: var(--text); }
 
 	/* ─── Animations ─── */
 	@keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
@@ -618,13 +618,13 @@
 	}
 	.header :global(.nes-btn) {
 		padding: 2px 8px;
-		font-size: 0.7rem;
+		font-size: 0.85rem;
 		line-height: 1;
 	}
 	.room-info { flex: 1; min-width: 0; }
 	.status {
 		display: flex; align-items: center; gap: 6px;
-		font-size: 0.75rem;
+		font-size: 0.9rem;
 	}
 	.status-dot { width: 6px; height: 6px; background: var(--text-muted); flex-shrink: 0; }
 	.status-dot.connecting { background: #f5a623; animation: blink 1s step-end infinite; }
@@ -633,19 +633,19 @@
 	.status-text { color: var(--text); }
 	.status-room { 
 		color: var(--text-dim); margin-left: 4px;
-		font-family: var(--font-mono); font-size: 0.7rem;
+		font-family: var(--font-mono); font-size: 0.85rem;
 	}
 
 	/* ─── Fallback banner ─── */
 	.fallback-banner {
 		padding: 6px 12px;
 		border-bottom: 1px solid var(--border);
-		font-size: 0.7rem; color: var(--text-dim);
+		font-size: 0.85rem; color: var(--text-dim);
 		display: flex; align-items: center; justify-content: space-between; gap: 8px;
 		flex-shrink: 0;
 	}
 	.fallback-banner :global(.nes-btn) {
-		font-size: 0.6rem; padding: 1px 6px;
+		font-size: 0.75rem; padding: 1px 6px;
 	}
 
 	/* ─── History ─── */
@@ -659,13 +659,13 @@
 		flex: 1; display: flex; flex-direction: column;
 		align-items: center; justify-content: center; gap: 8px;
 	}
-	.empty-prompt { font-size: 0.9rem; color: var(--text-dim); }
-	.empty-hint { font-size: 0.7rem; color: var(--text-muted); }
+	.empty-prompt { font-size: 1.1rem; color: var(--text-dim); }
+	.empty-hint { font-size: 0.85rem; color: var(--text-muted); }
 
 	/* ─── Message ─── */
 	.msg {
 		display: flex; gap: 6px;
-		font-size: 0.8rem;
+		font-size: 1.2rem;
 		line-height: 1.5;
 		padding: 2px 0;
 	}
@@ -682,7 +682,7 @@
 	}
 	.msg-meta {
 		display: flex; align-items: center; gap: 6px;
-		font-size: 0.6rem;
+		font-size: 0.75rem;
 		margin-bottom: 1px;
 	}
 	.msg-time { color: var(--text-muted); }
@@ -704,7 +704,7 @@
 	.msg-rendered :global(pre.code-block) {
 		background: var(--bg); border: 1px solid var(--border);
 		padding: 8px; overflow-x: auto; margin: 0.3em 0;
-		font-size: 0.75rem;
+		font-size: 0.9rem;
 	}
 	.msg-rendered :global(.md-inline-code) {
 		background: var(--bg); border: 1px solid var(--border);
@@ -740,7 +740,7 @@
 
 	.copy-btn {
 		flex-shrink: 0;
-		font-family: inherit; font-size: 0.6rem;
+		font-family: inherit; font-size: 0.75rem;
 		color: var(--text-muted); background: none;
 		border: none; cursor: pointer; padding: 0 2px;
 	}
@@ -759,14 +759,14 @@
 		flex-shrink: 0;
 		color: var(--text-dim);
 		font-weight: 700;
-		font-size: 0.85rem;
+		font-size: 1.2rem;
 		user-select: none;
 	}
 	.msg-input {
 		flex: 1;
 		background: transparent; border: none;
 		padding: 6px 0;
-		color: var(--text); font-size: 0.8rem;
+		color: var(--text); font-size: 1.2rem;
 		font-family: var(--font-mono);
 		outline: none;
 	}
@@ -778,7 +778,7 @@
 
 	.input-bar :global(.nes-btn) {
 		padding: 4px 10px;
-		font-size: 0.75rem;
+		font-size: 0.9rem;
 		line-height: 1;
 	}
 
@@ -790,7 +790,7 @@
 	}
 	.toast {
 		padding: 6px 12px;
-		font-size: 0.7rem; text-align: center;
+		font-size: 0.85rem; text-align: center;
 		cursor: pointer; pointer-events: auto;
 		animation: fadeIn 0.15s ease;
 		border: 1px solid var(--border);
@@ -808,6 +808,6 @@
 	/* ─── Responsive ─── */
 	@media (max-width: 480px) {
 		.header { gap: 4px; }
-		.header :global(.nes-btn) { font-size: 0.6rem; padding: 1px 6px; }
+		.header :global(.nes-btn) { font-size: 0.75rem; padding: 1px 6px; }
 	}
 </style>
