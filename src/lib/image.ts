@@ -6,10 +6,10 @@
  * So target raw JPEG < 180KB → ~240KB base64 → safe for DataChannel.
  */
 
-const MAX_WIDTH = 1280;
-const MAX_HEIGHT = 1280;
-const JPEG_QUALITY = 0.7;
-const MAX_BYTES = 180_000; // 180KB raw JPEG target
+const MAX_WIDTH = 1920;
+const MAX_HEIGHT = 1080;
+const JPEG_QUALITY = 0.92;
+const MAX_BYTES = 250_000; // 250KB raw JPEG — near DataChannel limit
 
 export function compressImage(
 	file: Blob,
@@ -40,12 +40,11 @@ export function compressImage(
 			const ctx = canvas.getContext('2d')!;
 			ctx.drawImage(img, 0, 0, w, h);
 
-			// Start with target quality, reduce if still too large
+			// Start with high quality, reduce only if over DataChannel limit
 			let q = quality;
 			let dataUrl: string;
 			do {
 				dataUrl = canvas.toDataURL('image/jpeg', q);
-				// base64 overhead: data:...;base64, prefix is ~22 chars
 				const byteLength = Math.round((dataUrl.length - 22) * 0.75);
 				if (byteLength <= MAX_BYTES) break;
 				q -= 0.1;
