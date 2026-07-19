@@ -48,6 +48,15 @@ export class ClipboardBridge {
 	private _dcCloseTimer: ReturnType<typeof setTimeout> | null = null;
 	private _userFallback = false;
 
+	// P2P readiness handshake: wait for bidirectional confirmation before
+	// marking the data channel as ready.  This prevents the first message
+	// from being lost when the remote SCTP association isn't fully up yet
+	// (common with background-tab throttling).
+	private _handshakePending = false;
+	private _handshakeAcked = false;
+	private _handshakeTimer: ReturnType<typeof setTimeout> | null = null;
+	private _msgQueue: ClipboardPayload[] = [];
+
 	constructor(room: string) {
 		this.room = room;
 		this.streamId = 'clip_' + this.generateId();
@@ -158,8 +167,14 @@ export class ClipboardBridge {
 			console.log('[clipdrop] ❌ signaling disconnected');
 			this._connected = false;
 			this._p2pReady = false;
+			this._handshakePending = false;
+			this._handshakeAcked = false;
+			if (this._handshakeTimer) {
+				clearTimeout(this._handshakeTimer);
+				this._handshakeTimer = null;
+			}
 			this._joined = false;
-			this._knownStreamIds.clear(); // Old stream IDs won't be valid after reconnect
+			this._knownStreamIds.clear();
 			this._onConnectionChange?.(false);
 			if (this._mode === 'p2p') {
 				this.setMode('connecting');
@@ -209,10 +224,15 @@ export class ClipboardBridge {
 			}
 			if (this._peers.size === 0) {
 				// No peers left — cancel any pending dataChannelClose debounce
-				// (peerDisconnected is a definitive signal, no need to wait)
 				if (this._dcCloseTimer) {
 					clearTimeout(this._dcCloseTimer);
 					this._dcCloseTimer = null;
+				}
+				// Cancel pending handshake
+				this._handshakePending = false;
+				if (this._handshakeTimer) {
+					clearTimeout(this._handshakeTimer);
+					this._handshakeTimer = null;
 				}
 				this._p2pReady = false;
 				this.setMode('connecting');
@@ -233,16 +253,16 @@ export class ClipboardBridge {
 			this.viewListedPeers(e.detail, sdk);
 		});
 
-		// Data channel is open — P2P is working!
+		// Data channel is open — initiate handshake to verify bidirectional readiness
 		sdk.addEventListener('dataChannelOpen', (e: CustomEvent) => {
-			console.log('[clipdrop] dataChannelOpen');
+			console.log('[clipdrop] dataChannelOpen — starting handshake');
 			// Cancel any pending close debounce — this is a fresh channel
 			if (this._dcCloseTimer) {
 				clearTimeout(this._dcCloseTimer);
 				this._dcCloseTimer = null;
 			}
-			this._p2pReady = true;
-			this.setMode('p2p');
+			// Don't mark P2P ready yet — wait for handshake ack from peer
+			this._startHandshake(sdk);
 		});
 
 		sdk.addEventListener('dataChannelClose', (e: CustomEvent) => {
@@ -254,6 +274,8 @@ export class ClipboardBridge {
 			this._dcCloseTimer = setTimeout(() => {
 				this._dcCloseTimer = null;
 				this._p2pReady = false;
+				this._handshakePending = false;
+				this._handshakeAcked = false;
 				this.setMode('connecting');
 				if (this._joined && this.sdk) {
 					this.startDiscoveryRetry(this.sdk);
@@ -264,6 +286,11 @@ export class ClipboardBridge {
 		// Incoming P2P data
 		sdk.addEventListener('dataReceived', (e: CustomEvent) => {
 			const payload = e.detail?.data ?? e.detail;
+			// Handle P2P readiness handshake (internal protocol)
+			if (payload && typeof payload === 'object' && 'clipdrop' in payload) {
+				this._handleHandshake(payload, sdk);
+				return;
+			}
 			if (payload && typeof payload === 'object' && 'type' in payload && 'content' in payload) {
 				this._onClipboard?.(payload as ClipboardPayload);
 			} else {
@@ -322,6 +349,94 @@ export class ClipboardBridge {
 				}
 			}
 		}, 2000);
+	}
+
+	// ─── P2P Readiness Handshake ─────────────────────────────────
+
+	/**
+	 * Send a lightweight handshake ping to verify the remote peer's
+	 * data channel is truly ready to receive. The peer responds with
+	 * a handshake-ack; only then do we mark P2P as ready.
+	 */
+	private _startHandshake(sdk: VDONinjaSDK) {
+		this._handshakePending = true;
+		this._handshakeAcked = false;
+
+		if (this._handshakeTimer) clearTimeout(this._handshakeTimer);
+
+		// Timeout: if no ack in 3s, assume ready anyway
+		this._handshakeTimer = setTimeout(() => {
+			if (this._handshakePending && !this._handshakeAcked) {
+				console.warn('[clipdrop] handshake timeout - assuming P2P ready');
+				this._finalizeHandshake();
+			}
+		}, 3000);
+
+		try {
+			sdk.sendData({ clipdrop: 'handshake', ts: Date.now() });
+			console.log('[clipdrop] handshake sent');
+		} catch (err) {
+			console.warn('[clipdrop] handshake send failed:', err);
+			this._finalizeHandshake();
+		}
+	}
+
+	/** Handle incoming handshake messages. Returns true if handled. */
+	private _handleHandshake(msg: any, sdk: VDONinjaSDK): boolean {
+		if (msg.clipdrop === 'handshake') {
+			// Peer is checking if we're ready — reply with ack
+			console.log('[clipdrop] handshake received, sending ack');
+			try {
+				sdk.sendData({ clipdrop: 'handshake-ack', ts: msg.ts });
+			} catch (err) {
+				console.warn('[clipdrop] handshake-ack send failed:', err);
+			}
+			// The ack itself proves we can send; mark ready
+			if (!this._p2pReady) {
+				this._finalizeHandshake();
+			}
+			return true;
+		}
+		if (msg.clipdrop === 'handshake-ack') {
+			console.log('[clipdrop] handshake-ack received');
+			this._handshakeAcked = true;
+			this._finalizeHandshake();
+			return true;
+		}
+		return false;
+	}
+
+	/** Mark P2P as ready and flush any queued messages */
+	private _finalizeHandshake() {
+		if (this._handshakeTimer) {
+			clearTimeout(this._handshakeTimer);
+			this._handshakeTimer = null;
+		}
+		this._handshakePending = false;
+
+		if (!this._p2pReady) {
+			this._p2pReady = true;
+			this.setMode('p2p');
+			console.log('[clipdrop] P2P fully ready (handshake complete)');
+			this._flushQueue();
+		}
+	}
+
+	/** Send all queued messages now that P2P is ready */
+	private _flushQueue() {
+		if (this._msgQueue.length === 0) return;
+		console.log(`[clipdrop] flushing ${this._msgQueue.length} queued message(s)`);
+		const queue = [...this._msgQueue];
+		this._msgQueue = [];
+		for (const payload of queue) {
+			try {
+				this.sdk?.sendData(payload);
+				this._onClipboard?.(payload);
+				console.log('[clipdrop] queued P2P send');
+			} catch (err) {
+				console.warn('[clipdrop] queued P2P send failed:', err);
+			}
+		}
 	}
 
 	// ─── HTTP Fallback (on-demand pull) ─────────────────────────
@@ -387,7 +502,7 @@ export class ClipboardBridge {
 			}
 		}
 
-		// P2P send with retry
+		// P2P fully ready — send directly
 		if (this._p2pReady && this.sdk) {
 			for (let i = 0; i < 3; i++) {
 				try {
@@ -404,6 +519,13 @@ export class ClipboardBridge {
 			return false;
 		}
 
+		// Handshake in progress — queue the message for immediate flush
+		if (this._handshakePending && this.sdk) {
+			this._msgQueue.push(payload);
+			console.log('[clipdrop] P2P handshake in progress — message queued');
+			return true;
+		}
+
 		console.warn('[clipdrop] P2P not ready');
 		return false;
 	}
@@ -414,8 +536,29 @@ export class ClipboardBridge {
 			return false;
 		}
 		if (!this._p2pReady || !this.sdk) {
-			console.warn('[clipdrop] image send requires P2P');
-			return false;
+			if (this._handshakePending && this.sdk) {
+				console.warn('[clipdrop] image send queued during handshake');
+				// Images are too large to queue safely; wait for handshake then retry
+				await new Promise<void>((resolve) => {
+					const check = () => {
+						if (this._p2pReady || !this._handshakePending) {
+							resolve();
+						} else {
+							setTimeout(check, 100);
+						}
+					};
+					// Max wait 4s (handshake timeout is 3s)
+					setTimeout(() => resolve(), 4000);
+					check();
+				});
+				if (!this._p2pReady || !this.sdk) {
+					console.warn('[clipdrop] image send failed — P2P not ready after handshake');
+					return false;
+				}
+			} else {
+				console.warn('[clipdrop] image send requires P2P');
+				return false;
+			}
 		}
 		const rawBytes = Math.round((dataUrl.length - 22) * 0.75);
 		const sizeKB = Math.round(rawBytes / 1024);
@@ -447,6 +590,8 @@ export class ClipboardBridge {
 	destroy() {
 		if (this._retryTimer) clearInterval(this._retryTimer);
 		if (this._dcCloseTimer) clearTimeout(this._dcCloseTimer);
+		if (this._handshakeTimer) clearTimeout(this._handshakeTimer);
+		this._msgQueue = [];
 		if (this.sdk) {
 			this.sdk.leaveRoom();
 			this.sdk.disconnect();
