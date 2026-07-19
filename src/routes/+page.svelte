@@ -27,39 +27,28 @@
 </svelte:head>
 
 <div class="page">
-	<div class="cyber-terminal">
-		<div class="cyber-terminal__chrome">
-			<div class="cyber-terminal__dots">
-				<span class="cyber-terminal__dot"></span>
-				<span class="cyber-terminal__dot"></span>
-				<span class="cyber-terminal__dot"></span>
-			</div>
-			<span class="cyber-terminal__title">clipdrop</span>
+	<div class="hero">
+		<div class="brand">
+			<div class="brand-icon">⌘</div>
+			<h1 class="brand-name">clipdrop</h1>
 		</div>
-		<div class="cyber-terminal__body">
-			<div class="cyber-terminal__line">
-				<span class="cyber-terminal__prompt">$</span>
-				<span class="cyber-text-cyan">clipdrop</span>
-				<span class="cyber-text-muted">— P2P clipboard sync</span>
-			</div>
-			<div class="cyber-terminal__line join-row">
-				<span class="cyber-terminal__prompt">$</span>
-				<input
-					type="text"
-					class="cyber-input room-input"
-					placeholder="room name, or leave empty for random"
-					bind:value={roomInput}
-					onkeydown={handleKeydown}
-					spellcheck="false"
-					autocomplete="off"
-				/>
-				<button class="cyber-btn" onclick={joinRoom}>ENTER</button>
-			</div>
-			<div class="cyber-terminal__line">
-				<span class="cyber-terminal__prompt">$</span>
-				<span class="cyber-terminal__cursor"></span>
-			</div>
+		<p class="brand-desc">peer-to-peer clipboard sync</p>
+
+		<div class="join-box">
+			<input
+				type="text"
+				class="room-input"
+				placeholder="enter room name"
+				bind:value={roomInput}
+				onkeydown={handleKeydown}
+				spellcheck="false"
+				autocomplete="off"
+			/>
+			<button class="join-btn" onclick={joinRoom}>
+				{roomInput.trim() ? 'join' : 'create'}
+			</button>
 		</div>
+		<p class="join-hint">leave empty to create a new room</p>
 	</div>
 </div>
 
@@ -72,38 +61,79 @@
 		padding: 24px;
 	}
 
-	:global(.cyber-terminal) {
-		max-width: 520px;
+	.hero {
+		max-width: 400px;
 		width: 100%;
+		text-align: center;
 	}
 
-	.join-row {
+	.brand {
 		display: flex;
 		align-items: center;
-		gap: 8px;
+		justify-content: center;
+		gap: 12px;
+		margin-bottom: 6px;
+	}
+
+	.brand-icon {
+		font-size: 2rem;
+		color: var(--success);
+	}
+
+	.brand-name {
+		font-size: 2rem;
+		font-weight: 700;
+		color: var(--success);
+		letter-spacing: 0.02em;
+	}
+
+	.brand-desc {
+		color: var(--text-muted);
+		font-size: 0.9rem;
+		margin-bottom: 40px;
+	}
+
+	.join-box {
+		display: flex;
+		border: 1px solid var(--border);
+		background: var(--bg-card);
 	}
 
 	.room-input {
 		flex: 1;
 		min-width: 0;
-		background: transparent !important;
-		border: 1px solid var(--border) !important;
-		padding: 8px 12px !important;
-		color: var(--text) !important;
-		font-size: 0.95rem !important;
-		font-family: var(--font-mono) !important;
-		outline: none !important;
+		background: transparent;
+		border: none;
+		padding: 14px 16px;
+		color: var(--text);
+		font-size: 0.95rem;
+		font-family: var(--font-mono);
+		outline: none;
 	}
 
 	.room-input::placeholder {
 		color: var(--text-muted);
 	}
 
-	.room-input:focus {
-		border-color: var(--accent) !important;
+	.join-btn {
+		padding: 14px 24px;
+		background: var(--success);
+		color: var(--bg);
+		border: none;
+		font-weight: 700;
+		font-size: 0.9rem;
+		letter-spacing: 0.05em;
+		cursor: pointer;
+		transition: opacity 0.15s;
 	}
 
-	:global(.cyber-btn) {
-		white-space: nowrap;
+	.join-btn:hover {
+		opacity: 0.85;
+	}
+
+	.join-hint {
+		color: var(--text-muted);
+		font-size: 0.75rem;
+		margin-top: 12px;
 	}
 </style>

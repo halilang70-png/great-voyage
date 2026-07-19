@@ -360,7 +360,7 @@
 >
 	{#if dragOver}
 		<div class="drop-overlay">
-			<div class="drop-icon">📎</div>
+			<div class="drop-icon">+</div>
 			<div class="drop-text">drop image to send</div>
 		</div>
 	{/if}
@@ -434,11 +434,11 @@
 			</div>
 		</div>
 
-		<button class="cyber-btn cyber-btn--small" onclick={() => showQR = !showQR} title="QR 码">QR</button>
+		<button class="cyber-btn cyber-btn--small" onclick={() => showQR = !showQR} title="QR 码">qr</button>
 
-		<button class="cyber-btn cyber-btn--small" onclick={() => showWhiteboard = true} title="白板" disabled={mode !== 'p2p'}>✏</button>
+		<button class="cyber-btn cyber-btn--small" onclick={() => showWhiteboard = true} title="白板" disabled={mode !== 'p2p'}>draw</button>
 
-		<button class="cyber-btn cyber-btn--small" onclick={() => showSettings = !showSettings} title="设置">⚙</button>
+		<button class="cyber-btn cyber-btn--small" onclick={() => showSettings = !showSettings} title="设置">opts</button>
 	</header>
 
 	<!-- Fallback banner -->
@@ -456,14 +456,14 @@
 		{#if history.length === 0}
 			<div class="empty-state">
 				<p class="empty-prompt">[clipdrop] <span class="blink">▌</span></p>
-				<p class="empty-hint">type a message, paste an image, or drop a file</p>
+				<p class="empty-hint">paste an image, drop a file, or type a message</p>
 			</div>
 		{/if}
 
 		{#each history as item, i (item.timestamp + '-' + i)}
 			{@const isOwn = item.senderId === bridge?.['streamId']}
 			<div class="msg" class:own={isOwn}>
-				<div class="msg-prefix">{isOwn ? '$' : '>'}</div>
+				<div class="msg-prefix">{isOwn ? '•' : '>'}</div>
 				<div class="msg-body">
 					<div class="msg-meta">
 						<span class="msg-time">[{formatTime(item.timestamp)}]</span>
@@ -501,7 +501,7 @@
 
 	<!-- Input -->
 	<div class="input-bar">
-		<span class="input-prompt">{mode === 'fallback' ? 'KV>' : '$'}</span>
+		<span class="input-prompt">{mode === 'fallback' ? 'relay' : '›'}</span>
 		<input
 			type="text"
 			class="msg-input"
