@@ -370,7 +370,7 @@
 		<!-- svelte-ignore a11y_click_events_have_key_events -->
 		<!-- svelte-ignore a11y_no_static_element_interactions -->
 		<div class="panel-overlay" onclick={() => showSettings = false}></div>
-		<div class="nes-container is-dark settings-panel">
+		<div class="cyber-card settings-panel">
 			<div class="settings-title">// SETTINGS</div>
 			<label class="toggle-row">
 				<span>auto_copy</span>
@@ -392,13 +392,13 @@
 		<!-- svelte-ignore a11y_click_events_have_key_events -->
 		<!-- svelte-ignore a11y_no_static_element_interactions -->
 		<div class="panel-overlay" onclick={() => showQR = false}></div>
-		<div class="nes-container is-dark qr-popup">
+		<div class="cyber-card qr-popup">
 			<div class="qr-popup-header">
 				<span class="qr-popup-title">// SCAN</span>
-				<button class="nes-btn is-small" onclick={() => showQR = false}>✕</button>
+				<button class="cyber-btn cyber-btn--small" onclick={() => showQR = false}>✕</button>
 			</div>
 			<QRCode url={roomUrl} />
-			<button class="nes-btn qr-copy-btn" onclick={() => copyToClipboard(roomUrl, -2)}>
+			<button class="cyber-btn qr-copy-btn" onclick={() => copyToClipboard(roomUrl, -2)}>
 				{copiedIndex === -2 ? '✓ copied' : 'copy link'}
 			</button>
 		</div>
@@ -423,29 +423,29 @@
 
 	<!-- Header -->
 	<header class="header">
-		<button class="nes-btn is-small" onclick={goBack} title="back to home">{'<'}</button>
+		<button class="cyber-btn cyber-btn--small" onclick={goBack} title="back to home">{'<'}</button>
 
 		<div class="room-info">
 			<div class="status">
 				<span class="status-dot {statusDot}"></span>
 				<span class="status-text">[{statusText}]</span>
 				<span class="status-room">{roomId}</span>
-				<button class="nes-btn is-small mode-toggle" onclick={toggleMode} title={modeToggleLabel}>{modeToggleLabel}</button>
+				<button class="cyber-btn cyber-btn--small mode-toggle" onclick={toggleMode} title={modeToggleLabel}>{modeToggleLabel}</button>
 			</div>
 		</div>
 
-		<button class="nes-btn is-small" onclick={() => showQR = !showQR} title="QR 码">QR</button>
+		<button class="cyber-btn cyber-btn--small" onclick={() => showQR = !showQR} title="QR 码">QR</button>
 
-		<button class="nes-btn is-small" onclick={() => showWhiteboard = true} title="白板" disabled={mode !== 'p2p'}>✏</button>
+		<button class="cyber-btn cyber-btn--small" onclick={() => showWhiteboard = true} title="白板" disabled={mode !== 'p2p'}>✏</button>
 
-		<button class="nes-btn is-small" onclick={() => showSettings = !showSettings} title="设置">⚙</button>
+		<button class="cyber-btn cyber-btn--small" onclick={() => showSettings = !showSettings} title="设置">⚙</button>
 	</header>
 
 	<!-- Fallback banner -->
 	{#if mode === 'fallback'}
 		<div class="fallback-banner">
 			<span>> KV mode — server relay</span>
-			<button class="nes-btn is-small" onclick={toggleMode}>switch to P2P</button>
+			<button class="cyber-btn cyber-btn--small" onclick={toggleMode}>switch to P2P</button>
 		</div>
 	{/if}
 
@@ -511,15 +511,15 @@
 			disabled={!connected}
 		/>
 		{#if mode === 'fallback'}
-			<button class="nes-btn" onclick={syncLatest} title="接收" disabled={syncing}>
+			<button class="cyber-btn" onclick={syncLatest} title="接收" disabled={syncing}>
 				{syncing ? '⟳' : '↻'}
 			</button>
 		{:else}
-			<button class="nes-btn" onclick={sendImageFromPaste} title="paste image" disabled={!connected}>
+			<button class="cyber-btn" onclick={sendImageFromPaste} title="paste image" disabled={!connected}>
 				P
 			</button>
 		{/if}
-		<button class="nes-btn is-primary" onclick={sendText} disabled={!connected || !inputText.trim()} title="send">
+		<button class="cyber-btn cyber-btn--green" onclick={sendText} disabled={!connected || !inputText.trim()} title="send">
 			&gt;
 		</button>
 	</div>
@@ -597,13 +597,13 @@
 	/* ─── Drop overlay ─── */
 	.drop-overlay {
 		position: fixed; inset: 0; z-index: 100;
-		background: rgba(51, 255, 51, 0.08);
+		background: rgba(0, 240, 255, 0.05);
 		border: 2px dashed var(--border);
 		display: flex; flex-direction: column;
 		align-items: center; justify-content: center; gap: 12px;
 		animation: fadeIn 0.15s ease;
 	}
-	.drop-text { font-size: 1.2rem; font-weight: 400; color: var(--text); }
+	.drop-text { font-size: 1.2rem; font-weight: 400; color: var(--accent); }
 
 	/* ─── Animations ─── */
 	@keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
@@ -616,9 +616,9 @@
 		border-bottom: 1px solid var(--border);
 		background: var(--bg-card); flex-shrink: 0;
 	}
-	.header :global(.nes-btn) {
-		padding: 2px 8px;
-		font-size: 0.85rem;
+	.header :global(.cyber-btn) {
+		padding: 4px 10px;
+		font-size: 0.8rem;
 		line-height: 1;
 	}
 	.room-info { flex: 1; min-width: 0; }
@@ -627,9 +627,9 @@
 		font-size: 0.9rem;
 	}
 	.status-dot { width: 6px; height: 6px; background: var(--text-muted); flex-shrink: 0; }
-	.status-dot.connecting { background: #f5a623; animation: blink 1s step-end infinite; }
+	.status-dot.connecting { background: var(--warn); animation: blink 1s step-end infinite; }
 	.status-dot.connected { background: var(--success); }
-	.status-dot.fallback { background: #f5a623; }
+	.status-dot.fallback { background: var(--warn); }
 	.status-text { color: var(--text); }
 	.status-room { 
 		color: var(--text-dim); margin-left: 4px;
@@ -644,8 +644,8 @@
 		display: flex; align-items: center; justify-content: space-between; gap: 8px;
 		flex-shrink: 0;
 	}
-	.fallback-banner :global(.nes-btn) {
-		font-size: 0.75rem; padding: 1px 6px;
+	.fallback-banner :global(.cyber-btn) {
+		font-size: 0.7rem; padding: 2px 8px;
 	}
 
 	/* ─── History ─── */
@@ -690,7 +690,7 @@
 		color: var(--text-dim);
 	}
 	.msg-badge {
-		color: #f5a623;
+		color: var(--warn);
 	}
 
 	.msg-content { display: flex; align-items: flex-start; gap: 6px; }
@@ -699,6 +699,7 @@
 		overflow-wrap: break-word;
 		min-width: 0;
 	}
+	.msg.own .msg-rendered { color: var(--success); }
 	.msg-rendered :global(p) { margin: 0 0 0.3em; }
 	.msg-rendered :global(p:last-child) { margin-bottom: 0; }
 	.msg-rendered :global(pre.code-block) {
@@ -731,12 +732,12 @@
 	.msg-rendered :global(del) { color: var(--text-muted); }
 
 	/* Syntax highlighting */
-	.msg-rendered :global(.hl-keyword) { color: #f5a623; }
-	.msg-rendered :global(.hl-string) { color: #33ff33; }
-	.msg-rendered :global(.hl-number) { color: #f5a623; }
+	.msg-rendered :global(.hl-keyword) { color: var(--warn); }
+	.msg-rendered :global(.hl-string) { color: var(--success); }
+	.msg-rendered :global(.hl-number) { color: var(--warn); }
 	.msg-rendered :global(.hl-comment) { color: var(--text-muted); font-style: italic; }
 	.msg-rendered :global(.hl-func) { color: var(--accent); }
-	.msg-rendered :global(.hl-type) { color: #f5a623; }
+	.msg-rendered :global(.hl-type) { color: var(--danger); }
 
 	.copy-btn {
 		flex-shrink: 0;
@@ -776,8 +777,8 @@
 		caret-color: var(--text);
 	}
 
-	.input-bar :global(.nes-btn) {
-		padding: 4px 10px;
+	.input-bar :global(.cyber-btn) {
+		padding: 6px 12px;
 		font-size: 0.9rem;
 		line-height: 1;
 	}
@@ -799,8 +800,8 @@
 	}
 	.toast-success { border-color: var(--success); color: var(--success); }
 	.toast-error { border-color: var(--danger); color: var(--danger); }
-	.toast-warn { border-color: #f5a623; color: #f5a623; }
-	.toast-info { border-color: var(--text-dim); color: var(--text-dim); }
+	.toast-warn { border-color: var(--warn); color: var(--warn); }
+	.toast-info { border-color: var(--accent); color: var(--accent); }
 
 	/* ─── Blink cursor ─── */
 	.blink { animation: blink 1s step-end infinite; }
@@ -808,6 +809,6 @@
 	/* ─── Responsive ─── */
 	@media (max-width: 480px) {
 		.header { gap: 4px; }
-		.header :global(.nes-btn) { font-size: 0.75rem; padding: 1px 6px; }
+		.header :global(.cyber-btn) { font-size: 0.7rem; padding: 3px 6px; }
 	}
 </style>

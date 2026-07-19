@@ -27,23 +27,40 @@
 </svelte:head>
 
 <div class="page">
-	<main class="container">
-		<h1 class="title">clipdrop</h1>
-		<p class="subtitle">P2P clipboard sync</p>
-
-		<div class="input-row">
-			<input
-				type="text"
-				class="room-input"
-				placeholder="room name, or leave empty for random"
-				bind:value={roomInput}
-				onkeydown={handleKeydown}
-				spellcheck="false"
-				autocomplete="off"
-			/>
-			<button class="nes-btn is-primary" onclick={joinRoom}>&gt;</button>
+	<div class="cyber-terminal">
+		<div class="cyber-terminal__chrome">
+			<div class="cyber-terminal__dots">
+				<span class="cyber-terminal__dot"></span>
+				<span class="cyber-terminal__dot"></span>
+				<span class="cyber-terminal__dot"></span>
+			</div>
+			<span class="cyber-terminal__title">clipdrop</span>
 		</div>
-	</main>
+		<div class="cyber-terminal__body">
+			<div class="cyber-terminal__line">
+				<span class="cyber-terminal__prompt">$</span>
+				<span class="cyber-text-cyan">clipdrop</span>
+				<span class="cyber-text-muted">— P2P clipboard sync</span>
+			</div>
+			<div class="cyber-terminal__line join-row">
+				<span class="cyber-terminal__prompt">$</span>
+				<input
+					type="text"
+					class="cyber-input room-input"
+					placeholder="room name, or leave empty for random"
+					bind:value={roomInput}
+					onkeydown={handleKeydown}
+					spellcheck="false"
+					autocomplete="off"
+				/>
+				<button class="cyber-btn" onclick={joinRoom}>ENTER</button>
+			</div>
+			<div class="cyber-terminal__line">
+				<span class="cyber-terminal__prompt">$</span>
+				<span class="cyber-terminal__cursor"></span>
+			</div>
+		</div>
+	</div>
 </div>
 
 <style>
@@ -52,65 +69,41 @@
 		display: flex;
 		align-items: center;
 		justify-content: center;
+		padding: 24px;
 	}
 
-	.container {
+	:global(.cyber-terminal) {
+		max-width: 520px;
+		width: 100%;
+	}
+
+	.join-row {
 		display: flex;
-		flex-direction: column;
 		align-items: center;
-		gap: 24px;
-		padding: 40px 24px;
-		max-width: 480px;
-		width: 100%;
-	}
-
-	.title {
-		font-size: 2rem;
-		font-weight: 700;
-		letter-spacing: -0.02em;
-		color: var(--text);
-	}
-
-	.subtitle {
-		font-size: 0.85rem;
-		color: var(--text-dim);
-		margin-top: -12px;
-	}
-
-	.input-row {
-		display: flex;
-		gap: 6px;
-		width: 100%;
+		gap: 8px;
 	}
 
 	.room-input {
 		flex: 1;
-		background: transparent;
-		border: 1px solid var(--border);
-		padding: 10px 14px;
-		color: var(--text);
-		font-size: 0.85rem;
-		font-family: var(--font-mono);
-		outline: none;
+		min-width: 0;
+		background: transparent !important;
+		border: 1px solid var(--border) !important;
+		padding: 8px 12px !important;
+		color: var(--text) !important;
+		font-size: 0.95rem !important;
+		font-family: var(--font-mono) !important;
+		outline: none !important;
 	}
 
 	.room-input::placeholder {
 		color: var(--text-muted);
-		font-family: var(--font);
 	}
 
 	.room-input:focus {
-		border-color: var(--border-focus);
+		border-color: var(--accent) !important;
 	}
 
-	.input-row :global(.nes-btn) {
-		padding: 10px 18px;
-		font-size: 1rem;
-		line-height: 1;
-	}
-
-	@media (max-width: 480px) {
-		.title { font-size: 1.6rem; }
-		.input-row { flex-direction: column; }
+	:global(.cyber-btn) {
+		white-space: nowrap;
 	}
 </style>

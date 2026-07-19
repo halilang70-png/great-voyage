@@ -15,10 +15,10 @@
 	let canvas: HTMLCanvasElement;
 	let ctx: CanvasRenderingContext2D | null = null;
 	let drawing = false;
-	let color = $state("#33ff33");
+	let color = $state("#00f0ff");
 	let size = $state(3);
 
-	const colors = ["#33ff33", "#ff3333", "#33aaff", "#ffaa33", "#ffffff"];
+	const colors = ["#00f0ff", "#ff2a6d", "#33aaff", "#fcee0a", "#ffffff"];
 	const sizes = [2, 4, 8];
 
 	function resize() {
@@ -102,15 +102,15 @@
 	function handleIncoming(msg: WhiteboardMsg) {
 		if (!ctx) return;
 		if (msg.kind === "stroke-start") {
-			ctx.strokeStyle = msg.color;
-			ctx.lineWidth = msg.size;
+			ctx.strokeStyle = msg.color ?? "#00f0ff";
+			ctx.lineWidth = msg.size ?? 3;
 			ctx.beginPath();
-			const [px, py] = denorm(msg.x, msg.y);
+			const [px, py] = denorm(msg.x ?? 0, msg.y ?? 0);
 			ctx.moveTo(px, py);
 			ctx.lineTo(px + 0.01, py);
 			ctx.stroke();
 		} else if (msg.kind === "stroke-move") {
-			const [px, py] = denorm(msg.x, msg.y);
+			const [px, py] = denorm(msg.x ?? 0, msg.y ?? 0);
 			ctx.lineTo(px, py);
 			ctx.stroke();
 		} else if (msg.kind === "clear") {
@@ -131,8 +131,8 @@
 				<button class="wb-size" class:active={size === s} onclick={() => (size = s)} aria-label="brush">{".".repeat(s)}</button>
 			{/each}
 			<span class="wb-divider"></span>
-			<button class="nes-btn is-small" onclick={handleClear} title="清空">C</button>
-			<button class="nes-btn is-small" onclick={onClose} title="关闭">x</button>
+			<button class="cyber-btn cyber-btn--small" onclick={handleClear} title="清空">C</button>
+			<button class="cyber-btn cyber-btn--small" onclick={onClose} title="关闭">x</button>
 		</div>
 	</div>
 	<canvas
