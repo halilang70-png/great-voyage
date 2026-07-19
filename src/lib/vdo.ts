@@ -93,7 +93,7 @@ export class ClipboardBridge {
 		}
 
 		const sdk = new SDK({
-			debug: false,
+			debug: true,
 			password: false,
 			autoRecover: true,
 			autoRelay: true
@@ -102,15 +102,16 @@ export class ClipboardBridge {
 
 		// Connection status
 		sdk.addEventListener('connected', () => {
+			console.log('[clipdrop] ✅ signaling connected');
 			this._connected = true;
 			this._onConnectionChange?.(true);
 		});
 
 		sdk.addEventListener('disconnected', () => {
+			console.log('[clipdrop] ❌ signaling disconnected');
 			this._connected = false;
 			this._p2pReady = false;
 			this._onConnectionChange?.(false);
-			// Go back to connecting — next send will trigger fallback if needed
 			if (this._mode === 'p2p') {
 				this.setMode('connecting');
 			}
@@ -122,12 +123,14 @@ export class ClipboardBridge {
 
 		// Peer events
 		sdk.addEventListener('peerConnected', (e: CustomEvent) => {
+			console.log('[clipdrop] 👤 peerConnected:', e.detail);
 			const { uuid } = e.detail;
 			this._peers.set(uuid, { uuid, streamID: '', label: 'Peer', connected: true });
 			this._onPeersChange?.(this.peers);
 		});
 
 		sdk.addEventListener('peerInfo', (e: CustomEvent) => {
+			console.log('[clipdrop] ℹ️ peerInfo:', JSON.stringify(e.detail));
 			const { uuid, streamID, info } = e.detail;
 			const peer = this._peers.get(uuid);
 			if (peer) {
@@ -137,20 +140,25 @@ export class ClipboardBridge {
 			}
 			// Auto-view discovered peer to establish bidirectional data channel
 			if (streamID && streamID !== this.streamId) {
-				console.log(`[clipdrop] auto-viewing peer: ${streamID}`);
+				console.log(`[clipdrop] 👁️ auto-viewing peer streamID: ${streamID}`);
 				sdk.view(streamID).catch((err: unknown) => {
 					console.warn('[clipdrop] view failed:', err);
 				});
 			}
 		});
 
+		sdk.addEventListener('peerDisconnected', (e: CustomEvent) => {
+			console.log('[clipdrop] 👤❌ peerDisconnected:', e.detail);
+		});
+
 		// Room listing — discover existing peers and view them
 		sdk.addEventListener('listing', (e: CustomEvent) => {
+			console.log('[clipdrop] 📋 listing:', JSON.stringify(e.detail));
 			const list = e.detail?.list;
 			if (!Array.isArray(list)) return;
 			for (const peer of list) {
 				if (peer.streamID && peer.streamID !== this.streamId) {
-					console.log(`[clipdrop] viewing listed peer: ${peer.streamID}`);
+					console.log(`[clipdrop] 👁️ viewing listed peer: ${peer.streamID}`);
 					sdk.view(peer.streamID).catch((err: unknown) => {
 						console.warn('[clipdrop] view listed peer failed:', err);
 					});
@@ -159,23 +167,35 @@ export class ClipboardBridge {
 		});
 
 		// Data channel is open — P2P is working!
-		sdk.addEventListener('dataChannelOpen', () => {
+		sdk.addEventListener('dataChannelOpen', (e: CustomEvent) => {
+			console.log('[clipdrop] 🔗 dataChannelOpen:', e.detail);
 			this._p2pReady = true;
 			this.setMode('p2p');
 		});
 
+		sdk.addEventListener('dataChannelClose', (e: CustomEvent) => {
+			console.log('[clipdrop] 🔗❌ dataChannelClose:', e.detail);
+		});
+
 		// Incoming P2P data
 		sdk.addEventListener('dataReceived', (e: CustomEvent) => {
-			const { data } = e.detail;
-			if (data && typeof data === 'object' && 'type' in data && 'content' in data) {
-				this._onClipboard?.(data as ClipboardPayload);
+			console.log('[clipdrop] 📨 dataReceived:', JSON.stringify(e.detail));
+			const payload = e.detail?.data ?? e.detail;
+			if (payload && typeof payload === 'object' && 'type' in payload && 'content' in payload) {
+				this._onClipboard?.(payload as ClipboardPayload);
+			} else {
+				console.warn('[clipdrop] 📨 unexpected data shape:', payload);
 			}
 		});
 
 		// Connect
+		console.log(`[clipdrop] 🚀 init — room: ${this.room}, streamId: ${this.streamId}`);
 		await sdk.connect();
+		console.log('[clipdrop] 🚀 connect() done');
 		await sdk.joinRoom({ room: this.room, password: false });
+		console.log('[clipdrop] 🚀 joinRoom() done');
 		await sdk.announce({ streamID: this.streamId, label: 'clipdrop' });
+		console.log('[clipdrop] 🚀 announce() done — waiting for peers');
 	}
 
 	// ─── HTTP Fallback (on-demand pull) ─────────────────────────
@@ -232,10 +252,12 @@ export class ClipboardBridge {
 
 		if (this._mode === 'p2p' && this.sdk) {
 			// P2P send
+			console.log('[clipdrop] 📤 P2P send:', payload);
 			this.sdk.sendData(payload);
 			this._onClipboard?.(payload);
 		} else {
 			// HTTP fallback — store in KV
+			console.log('[clipdrop] 📤 fallback send:', payload);
 			try {
 				await fetch(`/api/sync?room=${this.room}`, {
 					method: 'POST',
