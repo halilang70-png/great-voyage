@@ -40,6 +40,7 @@ export class ClipboardBridge {
 	private _mode: ConnectionMode = 'connecting';
 	private _p2pReady = false;
 	private _lastSyncTs = 0;
+	private _joined = false;
 
 	constructor(room: string) {
 		this.room = room;
@@ -105,12 +106,15 @@ export class ClipboardBridge {
 			console.log('[clipdrop] ✅ signaling connected');
 			this._connected = true;
 			this._onConnectionChange?.(true);
+			// Join room on every successful (re)connection
+			this.joinAndAnnounce(sdk);
 		});
 
 		sdk.addEventListener('disconnected', () => {
 			console.log('[clipdrop] ❌ signaling disconnected');
 			this._connected = false;
 			this._p2pReady = false;
+			this._joined = false;
 			this._onConnectionChange?.(false);
 			if (this._mode === 'p2p') {
 				this.setMode('connecting');
@@ -188,14 +192,25 @@ export class ClipboardBridge {
 			}
 		});
 
-		// Connect
+		// Connect — SDK auto-reconnects on failure, 'connected' event fires each time
 		console.log(`[clipdrop] 🚀 init — room: ${this.room}, streamId: ${this.streamId}`);
-		await sdk.connect();
-		console.log('[clipdrop] 🚀 connect() done');
-		await sdk.joinRoom({ room: this.room, password: false });
-		console.log('[clipdrop] 🚀 joinRoom() done');
-		await sdk.announce({ streamID: this.streamId, label: 'clipdrop' });
-		console.log('[clipdrop] 🚀 announce() done — waiting for peers');
+		sdk.connect().catch((err: unknown) => {
+			console.warn('[clipdrop] 🚀 connect() initial attempt failed, SDK will auto-retry:', err);
+		});
+	}
+
+	private async joinAndAnnounce(sdk: VDONinjaSDK) {
+		if (this._joined) return; // already in room
+		this._joined = true;
+		try {
+			await sdk.joinRoom({ room: this.room, password: false });
+			console.log('[clipdrop] 🚀 joinRoom() done');
+			await sdk.announce({ streamID: this.streamId, label: 'clipdrop' });
+			console.log('[clipdrop] 🚀 announce() done — waiting for peers');
+		} catch (err) {
+			this._joined = false;
+			console.error('[clipdrop] joinRoom/announce failed:', err);
+		}
 	}
 
 	// ─── HTTP Fallback (on-demand pull) ─────────────────────────
