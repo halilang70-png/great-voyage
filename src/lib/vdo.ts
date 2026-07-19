@@ -41,6 +41,8 @@ export class ClipboardBridge {
 	private _p2pReady = false;
 	private _lastSyncTs = 0;
 	private _joined = false;
+	private _retryTimer: ReturnType<typeof setInterval> | null = null;
+	private _knownStreamIds = new Set<string>();
 
 	constructor(room: string) {
 		this.room = room;
@@ -83,6 +85,21 @@ export class ClipboardBridge {
 		if (this._mode === mode) return;
 		this._mode = mode;
 		this._onModeChange?.(mode);
+	}
+
+	private viewListedPeers(detail: any, sdk: VDONinjaSDK) {
+		// listing format: { list: [{ streamID, uuid, ... }] }
+		const list = detail?.list ?? detail;
+		if (!Array.isArray(list)) return;
+		for (const peer of list) {
+			if (peer.streamID && peer.streamID !== this.streamId) {
+				this._knownStreamIds.add(peer.streamID);
+				console.log(`[clipdrop] 👁️ viewing listed peer: ${peer.streamID}`);
+				sdk.view(peer.streamID).catch((err: unknown) => {
+					console.warn('[clipdrop] view listed peer failed:', err);
+				});
+			}
+		}
 	}
 
 	async init() {
@@ -128,9 +145,16 @@ export class ClipboardBridge {
 		// Peer events
 		sdk.addEventListener('peerConnected', (e: CustomEvent) => {
 			console.log('[clipdrop] 👤 peerConnected:', e.detail);
-			const { uuid } = e.detail;
-			this._peers.set(uuid, { uuid, streamID: '', label: 'Peer', connected: true });
+			const { uuid, streamID } = e.detail;
+			this._peers.set(uuid, { uuid, streamID: streamID || '', label: 'Peer', connected: true });
 			this._onPeersChange?.(this.peers);
+			// If streamID is available right away, view immediately
+			if (streamID && streamID !== this.streamId) {
+				console.log(`[clipdrop] 👁️ viewing from peerConnected: ${streamID}`);
+				sdk.view(streamID).catch((err: unknown) => {
+					console.warn('[clipdrop] view from peerConnected failed:', err);
+				});
+			}
 		});
 
 		sdk.addEventListener('peerInfo', (e: CustomEvent) => {
@@ -158,16 +182,13 @@ export class ClipboardBridge {
 		// Room listing — discover existing peers and view them
 		sdk.addEventListener('listing', (e: CustomEvent) => {
 			console.log('[clipdrop] 📋 listing:', JSON.stringify(e.detail));
-			const list = e.detail?.list;
-			if (!Array.isArray(list)) return;
-			for (const peer of list) {
-				if (peer.streamID && peer.streamID !== this.streamId) {
-					console.log(`[clipdrop] 👁️ viewing listed peer: ${peer.streamID}`);
-					sdk.view(peer.streamID).catch((err: unknown) => {
-						console.warn('[clipdrop] view listed peer failed:', err);
-					});
-				}
-			}
+			this.viewListedPeers(e.detail, sdk);
+		});
+
+		// peerListing fires when room member list changes (new peer joins)
+		sdk.addEventListener('peerListing', (e: CustomEvent) => {
+			console.log('[clipdrop] 📋 peerListing:', JSON.stringify(e.detail));
+			this.viewListedPeers(e.detail, sdk);
 		});
 
 		// Data channel is open — P2P is working!
@@ -200,17 +221,49 @@ export class ClipboardBridge {
 	}
 
 	private async joinAndAnnounce(sdk: VDONinjaSDK) {
-		if (this._joined) return; // already in room
+		if (this._joined) return;
 		this._joined = true;
 		try {
 			await sdk.joinRoom({ room: this.room, password: false });
 			console.log('[clipdrop] 🚀 joinRoom() done');
 			await sdk.announce({ streamID: this.streamId, label: 'clipdrop' });
 			console.log('[clipdrop] 🚀 announce() done — waiting for peers');
+			// Start periodic retry to handle race condition (both tabs join simultaneously)
+			this.startDiscoveryRetry(sdk);
 		} catch (err) {
 			this._joined = false;
 			console.error('[clipdrop] joinRoom/announce failed:', err);
 		}
+	}
+
+	/**
+	 * Periodically re-announce and try to view known peers.
+	 * Handles the race condition where both peers join simultaneously
+	 * and both get empty listings.
+	 */
+	private startDiscoveryRetry(sdk: VDONinjaSDK) {
+		if (this._retryTimer) clearInterval(this._retryTimer);
+		let attempts = 0;
+		this._retryTimer = setInterval(async () => {
+			attempts++;
+			if (this._p2pReady || attempts > 30) {
+				// P2P connected or give up after 30s
+				if (this._retryTimer) clearInterval(this._retryTimer);
+				return;
+			}
+			// Re-announce so the other peer can discover us
+			try {
+				await sdk.announce({ streamID: this.streamId, label: 'clipdrop' });
+			} catch {
+				// ignore
+			}
+			// Try viewing any known peers again
+			for (const streamId of this._knownStreamIds) {
+				if (streamId !== this.streamId) {
+					sdk.view(streamId).catch(() => {});
+				}
+			}
+		}, 1000);
 	}
 
 	// ─── HTTP Fallback (on-demand pull) ─────────────────────────
@@ -304,6 +357,7 @@ export class ClipboardBridge {
 	}
 
 	destroy() {
+		if (this._retryTimer) clearInterval(this._retryTimer);
 		if (this.sdk) {
 			this.sdk.leaveRoom();
 			this.sdk.disconnect();
